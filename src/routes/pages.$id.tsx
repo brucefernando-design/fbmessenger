@@ -24,10 +24,12 @@ type Tab = "resumen" | "ficha" | "citas" | "mensajes";
 function PageWorkspace() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const page = getPageById(id);
+  const { pages, loaded } = useStoredPages();
+  const page = pages.find((p) => p.id === id);
   const [activeTab, setActiveTab] = useState<Tab>("resumen");
-  const [agentEnabled, setAgentEnabled] = useState(page?.agentEnabled ?? false);
   const [showDisconnect, setShowDisconnect] = useState(false);
+
+  if (!loaded) return null;
 
   if (!page) {
     return (
@@ -39,6 +41,14 @@ function PageWorkspace() {
       </div>
     );
   }
+
+  const agentEnabled = page.agentEnabled;
+  const setAgentEnabled = (enabled: boolean) =>
+    updatePage(page.id, {
+      agentEnabled: enabled,
+      status: enabled ? "agente_activo" : "conectada",
+    });
+
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "resumen", label: "Resumen" },
