@@ -36,7 +36,15 @@ function ConectarPage() {
           </Link>
         </div>
       </div>
+      <div className="border-b border-border bg-secondary">
+        <div className="mx-auto max-w-5xl px-4 py-2.5">
+          <p className="text-xs text-muted-foreground">
+            Esta pantalla es una demostración. Facebook real se abre en una ventana de Meta.
+          </p>
+        </div>
+      </div>
       <ConnectFlow />
+
     </div>
   );
 }

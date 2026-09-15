@@ -246,15 +246,16 @@ function SuccessStep({
             <span className="text-xs text-muted-foreground">Page ID</span>
             <span className="text-sm font-medium text-foreground">{pageId}</span>
           </div>
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Token</span>
-            <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-              <svg className="h-4 w-4 text-success" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <div className="mt-2 flex items-start justify-between gap-3">
+            <span className="shrink-0 text-xs text-muted-foreground">Permiso</span>
+            <span className="flex items-start gap-1.5 text-right text-sm font-medium text-foreground">
+              <svg className="mt-0.5 h-4 w-4 shrink-0 text-success" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
               </svg>
-              Guardado de forma segura
+              Permiso listo para guardar en el servidor (demo).
             </span>
           </div>
+
         </div>
       </div>
 
