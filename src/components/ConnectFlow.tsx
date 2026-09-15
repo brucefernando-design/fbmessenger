@@ -19,7 +19,7 @@ export function ConnectFlow({ onComplete }: ConnectFlowProps) {
   const connectedPage = connectablePages.find((p) => p.id === selectedPage);
 
   return (
-    <div className="flex min-h-[calc(100vh-2rem)] items-center justify-center px-4 py-8">
+    <div className="flex flex-1 items-center justify-center px-4 py-8">
       <div className="w-full max-w-[560px]">
         {step === "gate" && <GateStep onContinue={() => setStep("interstitial")} />}
         {step === "interstitial" && (

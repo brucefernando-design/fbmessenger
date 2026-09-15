@@ -25,7 +25,7 @@ export const Route = createFileRoute("/")({
 
 function Landing() {
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex flex-1 flex-col">
       {/* Nav */}
       <nav className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
