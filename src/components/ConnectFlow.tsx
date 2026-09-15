@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 import { FacebookLogo } from "./FacebookLogo";
 import { Avatar } from "./Avatar";
 import { connectablePages } from "@/lib/mockData";
+import { savePage } from "@/lib/pageStore";
+
 
 type Step = "gate" | "interstitial" | "choosePage" | "success";
 
@@ -32,9 +34,13 @@ export function ConnectFlow({ onComplete }: ConnectFlowProps) {
           <ChoosePageStep
             selectedPage={selectedPage}
             onSelect={setSelectedPage}
-            onConnect={() => setStep("success")}
+            onConnect={() => {
+              if (selectedPage) savePage(selectedPage);
+              setStep("success");
+            }}
           />
         )}
+
         {step === "success" && connectedPage && (
           <SuccessStep
             pageName={connectedPage.name}

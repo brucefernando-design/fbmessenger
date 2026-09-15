@@ -17,20 +17,13 @@ export const Route = createFileRoute("/pages/")({
 });
 
 function PagesList() {
-  const [pages, setPages] = useState<MockPage[]>(initialPages);
+  const { pages, loaded } = useStoredPages();
 
   const handleToggleAgent = (id: string, enabled: boolean) => {
-    setPages((prev) =>
-      prev.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              agentEnabled: enabled,
-              status: enabled ? ("agente_activo" as const) : ("conectada" as const),
-            }
-          : p,
-      ),
-    );
+    updatePage(id, {
+      agentEnabled: enabled,
+      status: enabled ? "agente_activo" : "conectada",
+    });
   };
 
   return (
@@ -50,7 +43,7 @@ function PagesList() {
         </Link>
       </div>
 
-      {pages.length === 0 ? (
+      {!loaded ? null : pages.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="space-y-3">
@@ -64,6 +57,7 @@ function PagesList() {
     </div>
   );
 }
+
 
 function EmptyState() {
   return (
