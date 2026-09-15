@@ -5,9 +5,9 @@ import { FacebookLogo } from "./FacebookLogo";
 import { Avatar } from "./Avatar";
 import { connectablePages } from "@/lib/mockData";
 import { savePage } from "@/lib/pageStore";
+import { startFacebookLogin, type LoginResult } from "@/lib/facebookAuth";
 
-
-type Step = "gate" | "interstitial" | "choosePage" | "success";
+type Step = "gate" | "interstitial" | "choosePage" | "success" | "redirecting";
 
 interface ConnectFlowProps {
   onComplete?: () => void;
@@ -20,10 +20,23 @@ export function ConnectFlow({ onComplete }: ConnectFlowProps) {
 
   const connectedPage = connectablePages.find((p) => p.id === selectedPage);
 
+  function handleGateContinue() {
+    const result: LoginResult = startFacebookLogin();
+    if (result.mode === "demo") {
+      // Sin App ID → flujo mock
+      setStep("interstitial");
+    } else {
+      // Con App ID → se está redirigiendo a Facebook; mostramos spinner brevemente
+      setStep("redirecting");
+    }
+  }
+
   return (
     <div className="flex flex-1 items-center justify-center px-4 py-8">
       <div className="w-full max-w-[560px]">
-        {step === "gate" && <GateStep onContinue={() => setStep("interstitial")} />}
+        {step === "gate" && <GateStep onContinue={handleGateContinue} />}
+
+        {/* Interstitial y choosePage SOLO en modo demo */}
         {step === "interstitial" && (
           <InterstitialStep
             onCancel={() => setStep("gate")}
@@ -52,6 +65,14 @@ export function ConnectFlow({ onComplete }: ConnectFlowProps) {
               onComplete?.();
             }}
           />
+        )}
+
+        {/* Pantalla de espera mientras el browser redirige a Facebook */}
+        {step === "redirecting" && (
+          <div className="rounded-xl border border-border bg-card px-6 py-10 text-center shadow-[0_2px_12px_-2px_rgba(0,0,0,0.08)]">
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            <p className="mt-4 text-sm text-muted-foreground">Abriendo Facebook…</p>
+          </div>
         )}
       </div>
     </div>

@@ -1,10 +1,20 @@
 /**
  * Facebook OAuth / Graph API integration layer.
  *
- * These are stub functions — no real Facebook SDK is wired up yet.
- * Each function marks where the real implementation will go.
- * The connect flow in /conectar currently uses mock data from mockData.ts.
+ * startFacebookLogin():
+ *   - Si VITE_FB_APP_ID está vacío → modo demo (mock flow).
+ *   - Si hay App ID → redirige a Facebook OAuth v21.0 con CSRF state.
+ *
+ * IMPORTANTE: El App Secret NUNCA está en el frontend.
+ * El intercambio de code → token ocurre en /api/facebook/exchange (backend).
  */
+
+const APP_ID = import.meta.env.VITE_FB_APP_ID as string | undefined;
+const REDIRECT_URI =
+  (import.meta.env.VITE_FB_REDIRECT_URI as string | undefined) ??
+  `${window.location.origin}/conectar/callback`;
+
+const CSRF_KEY = "fb_oauth_state";
 
 export interface FacebookPage {
   id: string;
@@ -20,29 +30,78 @@ export interface PageConnection {
   agentEnabled: boolean;
 }
 
-// TODO: Implement with Facebook Login SDK (FB.login)
-// Scopes needed: pages_manage_messages, pages_read_engagement, pages_messaging
-export async function startFacebookLogin(): Promise<string> {
-  // Real implementation:
-  // 1. Load FB SDK
-  // 2. FB.login({ scope: 'pages_manage_messages,pages_read_engagement,pages_messaging' })
-  // 3. Return authResponse.accessToken
-  throw new Error("startFacebookLogin() not implemented — using mock flow");
+export type LoginResult = { mode: "demo" } | { mode: "real" };
+
+/**
+ * Inicia el flujo de login con Facebook.
+ * - Sin App ID: devuelve { mode: "demo" } — ConnectFlow usa el mock.
+ * - Con App ID: genera state CSRF, lo guarda en sessionStorage y redirige
+ *   a la pantalla de OAuth de Facebook. No retorna (navegación completa).
+ */
+export function startFacebookLogin(): LoginResult {
+  if (!APP_ID) {
+    return { mode: "demo" };
+  }
+
+  // Generar state CSRF y guardarlo para verificarlo en /conectar/callback
+  const state = crypto.randomUUID();
+  sessionStorage.setItem(CSRF_KEY, state);
+
+  const params = new URLSearchParams({
+    client_id: APP_ID,
+    redirect_uri: REDIRECT_URI,
+    state,
+    scope: "pages_show_list,pages_messaging,pages_manage_metadata",
+    response_type: "code",
+  });
+
+  window.location.href = `https://www.facebook.com/v21.0/dialog/oauth?${params}`;
+
+  // TypeScript necesita un return aunque nunca se alcanza
+  return { mode: "real" };
 }
 
-// TODO: Exchange short-lived token for long-lived page access token
-// GET /oauth/access_token?grant_type=fb_exchange_token&client_id=...&client_secret=...&fb_exchange_token=...
-export async function exchangeCode(shortLivedToken: string): Promise<string> {
-  throw new Error("exchangeCode() not implemented — using mock flow");
+/**
+ * Recupera el state CSRF guardado en sessionStorage y lo borra.
+ * Úsalo en /conectar/callback para validar el parámetro ?state=.
+ */
+export function consumeCsrfState(): string | null {
+  const val = sessionStorage.getItem(CSRF_KEY);
+  sessionStorage.removeItem(CSRF_KEY);
+  return val;
 }
 
-// TODO: GET /me/accounts to list Pages the user administers
-export async function listPages(userAccessToken: string): Promise<FacebookPage[]> {
-  throw new Error("listPages() not implemented — using mock flow");
+/**
+ * Envía el código al backend para que lo intercambie por un token.
+ * El App Secret vive SOLO en el servidor — nunca en este archivo.
+ *
+ * Por ahora el backend no existe; la función devuelve un error descriptivo
+ * para que /conectar/callback muestre el mensaje correcto al usuario.
+ */
+export async function exchangeCode(_code: string): Promise<never> {
+  const res = await fetch("/api/facebook/exchange", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: _code, redirectUri: REDIRECT_URI }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`exchange_failed:${res.status}`);
+  }
+
+  // Si el backend responde OK en el futuro, retornará los datos de la página.
+  throw new Error("backend_not_implemented");
 }
 
-// TODO: Subscribe the Page to receive Messenger webhook events
-// POST /{page-id}/subscribed_apps
-export async function subscribeWebhook(pageId: string, pageAccessToken: string): Promise<boolean> {
-  throw new Error("subscribeWebhook() not implemented — using mock flow");
+// TODO: GET /me/accounts — listar Páginas del usuario autenticado
+export async function listPages(_userAccessToken: string): Promise<FacebookPage[]> {
+  throw new Error("listPages() not implemented — pending backend");
+}
+
+// TODO: POST /{page-id}/subscribed_apps — suscribir Página al webhook
+export async function subscribeWebhook(
+  _pageId: string,
+  _pageAccessToken: string,
+): Promise<boolean> {
+  throw new Error("subscribeWebhook() not implemented — pending backend");
 }

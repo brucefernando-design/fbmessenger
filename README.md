@@ -1,26 +1,29 @@
-# Smart Messenger AI
+# Allia2 — Messenger Agent
 
-quiero hacer un nuevo proyecto con el nombre messenge ia
+Conecta tu Página de Facebook para que Allia2 responda mensajes en Messenger.
 
-This project was built with [Lovable](https://lovable.dev).
+## Configurar Facebook App (para OAuth real)
 
-**Live app**: https://fbmessenger.lovable.app
+1. Ve a [developers.facebook.com](https://developers.facebook.com) → **Mis apps** → **Crear app**.
+2. Elige tipo **Business** (empresa). Ponle nombre, e.g. `Allia2`.
+3. En el panel izquierdo abre **Facebook Login para empresas** → **Configuración**.
+4. En **Valid OAuth Redirect URIs** agrega: `http://localhost:5173/conectar/callback`.
+5. Copia el **App ID** del panel principal (nunca el App Secret).
+6. Crea `.env` (copia `.env.example`) y pega: `VITE_FB_APP_ID=<tu-app-id>`.
+7. **Sin App Review** solo responde a admins/testers de la propia app.
+8. Para producción, agrega el dominio real al redirect URI y solicita App Review.
 
-## Build with Lovable
+> ⚠️ El **App Secret** no va en el frontend ni en git. Solo en el servidor backend.
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/08734fc6-de99-430c-b3bb-0dde6672364e).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+## Desarrollo local
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+git clone <repo-url>
+cd fbmessenger
+cp .env.example .env   # pon tu VITE_FB_APP_ID (opcional — sin él el flujo es demo)
+npm install
+npm run dev            # http://localhost:5173
 ```
+
+Sin `VITE_FB_APP_ID` el botón "Continuar con Facebook" usa el flujo demo (mock).
+Con App ID redirige a Facebook real; el backend para canjear el código viene después.
