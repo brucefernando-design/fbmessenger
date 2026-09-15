@@ -108,7 +108,9 @@ function PageWorkspace() {
           onCancel={() => setShowDisconnect(false)}
           onConfirm={() => {
             setShowDisconnect(false);
+            removePage(page.id);
             navigate({ to: "/pages" });
+
           }}
         />
       )}
