@@ -1,8 +1,7 @@
-import { useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { PageCard } from "@/components/PageCard";
-import { connectedPages as initialPages } from "@/lib/mockData";
-import type { MockPage } from "@/lib/mockData";
+import { updatePage, useStoredPages } from "@/lib/pageStore";
+
 
 export const Route = createFileRoute("/pages/")({
   head: () => ({
