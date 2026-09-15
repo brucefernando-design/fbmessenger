@@ -92,7 +92,7 @@ function Landing() {
             />
             <TrustBadge
               title="Seguro"
-              description="El token se guarda de forma segura."
+              description="El permiso se guarda en el servidor."
             />
           </div>
         </div>

@@ -32,7 +32,7 @@ function PagesList() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Páginas conectadas</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {pages.length} {pages.length === 1 ? "Página" : "Páginas"} vinculadas a Allia2
+            {pages.length} {pages.length === 1 ? "Página vinculada" : "Páginas vinculadas"} a Allia2
           </p>
         </div>
         <Link
