@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Toggle } from "@/components/Toggle";
 import { getPageById, type MockPage } from "@/lib/mockData";
+import { removePage, updatePage, useStoredPages } from "@/lib/pageStore";
+
 
 export const Route = createFileRoute("/pages/$id")({
   head: ({ params }) => {
