@@ -10,33 +10,88 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ComoFuncionaRouteImport } from './routes/como-funciona'
+import { Route as ConectarRouteImport } from './routes/conectar'
+import { Route as PagesRouteImport } from './routes/pages'
+import { Route as PagesIndexRouteImport } from './routes/pages.index'
+import { Route as PagesIdRouteImport } from './routes/pages.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ComoFuncionaRoute = ComoFuncionaRouteImport.update({
+  id: '/como-funciona',
+  path: '/como-funciona',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConectarRoute = ConectarRouteImport.update({
+  id: '/conectar',
+  path: '/conectar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PagesRoute = PagesRouteImport.update({
+  id: '/pages',
+  path: '/pages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PagesIndexRoute = PagesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PagesRoute,
+} as any)
+const PagesIdRoute = PagesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PagesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/como-funciona': typeof ComoFuncionaRoute
+  '/conectar': typeof ConectarRoute
+  '/pages': typeof PagesRouteWithChildren
+  '/pages/$id': typeof PagesIdRoute
+  '/pages/': typeof PagesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/como-funciona': typeof ComoFuncionaRoute
+  '/conectar': typeof ConectarRoute
+  '/pages/$id': typeof PagesIdRoute
+  '/pages': typeof PagesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/como-funciona': typeof ComoFuncionaRoute
+  '/conectar': typeof ConectarRoute
+  '/pages': typeof PagesRouteWithChildren
+  '/pages/$id': typeof PagesIdRoute
+  '/pages/': typeof PagesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    '/' | '/como-funciona' | '/conectar' | '/pages' | '/pages/$id' | '/pages/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/como-funciona' | '/conectar' | '/pages/$id' | '/pages'
+  id:
+    | '__root__'
+    | '/'
+    | '/como-funciona'
+    | '/conectar'
+    | '/pages'
+    | '/pages/$id'
+    | '/pages/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ComoFuncionaRoute: typeof ComoFuncionaRoute
+  ConectarRoute: typeof ConectarRoute
+  PagesRoute: typeof PagesRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +103,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/como-funciona': {
+      id: '/como-funciona'
+      path: '/como-funciona'
+      fullPath: '/como-funciona'
+      preLoaderRoute: typeof ComoFuncionaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conectar': {
+      id: '/conectar'
+      path: '/conectar'
+      fullPath: '/conectar'
+      preLoaderRoute: typeof ConectarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pages': {
+      id: '/pages'
+      path: '/pages'
+      fullPath: '/pages'
+      preLoaderRoute: typeof PagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pages/': {
+      id: '/pages/'
+      path: '/'
+      fullPath: '/pages/'
+      preLoaderRoute: typeof PagesIndexRouteImport
+      parentRoute: typeof PagesRoute
+    }
+    '/pages/$id': {
+      id: '/pages/$id'
+      path: '/$id'
+      fullPath: '/pages/$id'
+      preLoaderRoute: typeof PagesIdRouteImport
+      parentRoute: typeof PagesRoute
+    }
   }
 }
 
+interface PagesRouteChildren {
+  PagesIdRoute: typeof PagesIdRoute
+  PagesIndexRoute: typeof PagesIndexRoute
+}
+
+const PagesRouteChildren: PagesRouteChildren = {
+  PagesIdRoute: PagesIdRoute,
+  PagesIndexRoute: PagesIndexRoute,
+}
+
+const PagesRouteWithChildren = PagesRoute._addFileChildren(PagesRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ComoFuncionaRoute: ComoFuncionaRoute,
+  ConectarRoute: ConectarRoute,
+  PagesRoute: PagesRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
