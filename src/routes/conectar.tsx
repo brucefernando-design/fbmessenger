@@ -22,11 +22,14 @@ export const Route = createFileRoute("/conectar")({
 
 function ConectarPage() {
   return (
-    <div>
+    <div className="flex flex-1 flex-col">
       <div className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <Link to="/" className="text-sm font-semibold text-foreground">
-            Allia2
+          <Link to="/" className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
+              A2
+            </span>
+            <span className="text-sm font-semibold text-foreground">Allia2</span>
           </Link>
           <Link to="/pages" className="text-sm text-muted-foreground hover:text-foreground">
             Mis Páginas
