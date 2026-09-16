@@ -257,8 +257,8 @@ const PUBLIC_DIR = existsSync(join(ROOT, ".output", "public"))
 
 if (PUBLIC_DIR) {
   app.use(express.static(PUBLIC_DIR));
-  // Servir assets y fallback a index o 404
-  app.get("*", (req, res, next) => {
+  // Fallback para SPA en Express 5
+  app.use((req, res, next) => {
     if (req.path.startsWith("/api/")) return next();
     const indexHtml = join(PUBLIC_DIR, "index.html");
     if (existsSync(indexHtml)) {
