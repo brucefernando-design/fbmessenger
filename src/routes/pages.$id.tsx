@@ -131,6 +131,29 @@ function ResumenTab({
   onDisconnect: () => void;
 }) {
   const navigate = useNavigate();
+  const [webhookState, setWebhookState] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [webhookMsg, setWebhookMsg] = useState<string>("");
+
+  async function handleSubscribeWebhook() {
+    setWebhookState("loading");
+    setWebhookMsg("");
+    try {
+      const res = await fetch("/api/facebook/subscribe", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        setWebhookState("ok");
+        setWebhookMsg("Webhook activado. Messenger enviará eventos a tu servidor.");
+      } else {
+        setWebhookState("error");
+        const pageResult = data.pages?.find((p: { id: string }) => p.id === page.id);
+        setWebhookMsg(pageResult?.error ?? data.error ?? "Error al suscribir el webhook.");
+      }
+    } catch {
+      setWebhookState("error");
+      setWebhookMsg("No se pudo contactar con el servidor. ¿Está corriendo `npm run server`?");
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Connection status */}
@@ -154,6 +177,41 @@ function ResumenTab({
             <span className="text-sm text-muted-foreground">Agente</span>
             <Toggle checked={agentEnabled} onChange={onToggleAgent} label="Activar agente" />
           </div>
+        </div>
+      </div>
+
+      {/* Webhook */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <h2 className="text-sm font-semibold text-foreground">Webhook de Messenger</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Suscribe esta Página para recibir mensajes en tu servidor local (ngrok requerido en producción).
+        </p>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <button
+            onClick={handleSubscribeWebhook}
+            disabled={webhookState === "loading"}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {webhookState === "loading" ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
+                Activando…
+              </>
+            ) : (
+              "Activar webhook (prueba)"
+            )}
+          </button>
+          {webhookState === "ok" && (
+            <span className="flex items-center gap-1.5 text-xs text-success">
+              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              {webhookMsg}
+            </span>
+          )}
+          {webhookState === "error" && (
+            <span className="text-xs text-destructive">{webhookMsg}</span>
+          )}
         </div>
       </div>
 
