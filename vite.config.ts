@@ -12,4 +12,15 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  vite: {
+    server: {
+      proxy: {
+        // In dev, forward /api calls to the local Express server on port 8787
+        "/api": {
+          target: "http://localhost:8787",
+          changeOrigin: true,
+        },
+      },
+    },
+  },
 });
