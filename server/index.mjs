@@ -287,6 +287,11 @@ if (PUBLIC_DIR) {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   ${styleFile ? `<link rel="stylesheet" href="/assets/${styleFile}" />` : ""}
+  <script>
+    // Polyfill SSR hydration markers if absent
+    window.__TSR__ = window.__TSR__ || { manifest: { routes: {} } };
+    window.$_TSR = window.$_TSR || { h: function() {} };
+  </script>
 </head>
 <body class="bg-background text-foreground">
   <div id="root"></div>
