@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ComoFuncionaRouteImport } from './routes/como-funciona'
 import { Route as ConectarRouteImport } from './routes/conectar'
 import { Route as PagesRouteImport } from './routes/pages'
@@ -21,6 +22,11 @@ import { Route as PagesIdRouteImport } from './routes/pages.$id'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ComoFuncionaRoute = ComoFuncionaRouteImport.update({
@@ -61,6 +67,7 @@ const PagesIdRoute = PagesIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/como-funciona': typeof ComoFuncionaRoute
   '/conectar': typeof ConectarRouteWithChildren
   '/pages': typeof PagesRouteWithChildren
@@ -71,6 +78,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/como-funciona': typeof ComoFuncionaRoute
   '/conectar/callback': typeof ConectarCallbackRoute
   '/pages/$id': typeof PagesIdRoute
@@ -80,6 +88,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/como-funciona': typeof ComoFuncionaRoute
   '/conectar': typeof ConectarRouteWithChildren
   '/pages': typeof PagesRouteWithChildren
@@ -92,6 +101,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/como-funciona'
     | '/conectar'
     | '/pages'
@@ -102,6 +112,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/como-funciona'
     | '/conectar/callback'
     | '/pages/$id'
@@ -110,6 +121,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/como-funciona'
     | '/conectar'
     | '/pages'
@@ -121,6 +133,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   ComoFuncionaRoute: typeof ComoFuncionaRoute
   ConectarRoute: typeof ConectarRouteWithChildren
   PagesRoute: typeof PagesRouteWithChildren
@@ -133,6 +146,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/como-funciona': {
@@ -215,6 +235,7 @@ const PagesRouteWithChildren = PagesRoute._addFileChildren(PagesRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   ComoFuncionaRoute: ComoFuncionaRoute,
   ConectarRoute: ConectarRouteWithChildren,
   PagesRoute: PagesRouteWithChildren,

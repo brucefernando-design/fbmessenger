@@ -31,27 +31,112 @@ function loadEnv() {
 }
 
 const env = { ...process.env, ...loadEnv() };  // .env wins over process.env
-const { FB_APP_ID, FB_APP_SECRET, FB_VERIFY_TOKEN, GEMINI_API_KEY, GEMINI_MODEL } = env;
+const { FB_APP_ID, FB_APP_SECRET, FB_VERIFY_TOKEN, GEMINI_API_KEY, GEMINI_MODEL, ADMIN_KEY } = env;
 const MODEL_NAME = GEMINI_MODEL || "gemini-2.5-flash-lite";
+const EFFECTIVE_ADMIN_KEY = ADMIN_KEY || "allia2_admin_2026";
 const PORT = parseInt(env.SERVER_PORT ?? "8787", 10);
 
 console.log("[server] .env path:", join(ROOT, ".env"), "exists:", existsSync(join(ROOT, ".env")));
 console.log("[server] FB_VERIFY_TOKEN loaded:", FB_VERIFY_TOKEN ? "YES (length=" + FB_VERIFY_TOKEN.length + ")" : "NO — check .env");
 console.log("[server] GEMINI_API_KEY loaded:", GEMINI_API_KEY ? "YES (model=" + MODEL_NAME + ")" : "NO (echo fallback mode)");
+console.log("[server] ADMIN_KEY loaded:", ADMIN_KEY ? "YES (custom)" : "YES (default)");
 
-// ── Data helpers ──────────────────────────────────────────────────────────────
+// ── Cookie parser helper (0 external dependencies) ───────────────────────────
+function parseCookies(req) {
+  const list = {};
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return list;
+  cookieHeader.split(";").forEach((cookie) => {
+    const parts = cookie.split("=");
+    const name = parts[0]?.trim();
+    if (!name) return;
+    const value = parts.slice(1).join("=").trim();
+    try { list[name] = decodeURIComponent(value); } catch { list[name] = value; }
+  });
+  return list;
+}
+
+function generateClientCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let p1 = "";
+  let p2 = "";
+  for (let i = 0; i < 4; i++) p1 += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 4; i++) p2 += chars[Math.floor(Math.random() * chars.length)];
+  return `A2-${p1}-${p2}`;
+}
+
+// ── Data helpers (Clients & Pages stored together) ────────────────────────────
 const DATA_DIR = join(ROOT, "data");
 const PAGES_FILE = join(DATA_DIR, "pages.json");
 const PROMPTS_FILE = join(DATA_DIR, "prompts.json");
 
-const readPages = () => {
-  if (!existsSync(PAGES_FILE)) return [];
-  try { return JSON.parse(readFileSync(PAGES_FILE, "utf8")); } catch { return []; }
-};
+function readData() {
+  if (!existsSync(PAGES_FILE)) {
+    return { clients: [], pages: [] };
+  }
+  try {
+    const raw = JSON.parse(readFileSync(PAGES_FILE, "utf8"));
+    if (Array.isArray(raw)) {
+      // Legacy format migration
+      const clientFta = {
+        id: "client_fta_laredo",
+        name: "Fta Laredo",
+        code: "A2-FTAL-7359",
+        maxPages: 1,
+        status: "active",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const pages = raw.map((p) => {
+        if (p.id === "735987983143265") {
+          return { ...p, clientId: clientFta.id };
+        }
+        return p;
+      });
+      const data = { clients: [clientFta], pages };
+      writeData(data);
+      return data;
+    }
+    const clients = Array.isArray(raw.clients) ? raw.clients : [];
+    const pages = Array.isArray(raw.pages) ? raw.pages : [];
 
-const writePages = (pages) => {
+    // Guarantee Fta Laredo is preserved as client if page 735987983143265 is present
+    const ftaPage = pages.find((p) => p.id === "735987983143265");
+    if (ftaPage) {
+      let ftaClient = clients.find((c) => c.id === ftaPage.clientId || c.name.toLowerCase().includes("fta"));
+      if (!ftaClient) {
+        ftaClient = {
+          id: ftaPage.clientId || "client_fta_laredo",
+          name: "Fta Laredo",
+          code: "A2-FTAL-7359",
+          maxPages: 1,
+          status: "active",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        clients.unshift(ftaClient);
+      }
+      ftaPage.clientId = ftaClient.id;
+    }
+
+    return { clients, pages };
+  } catch (err) {
+    console.error("[readData] Error:", err.message);
+    return { clients: [], pages: [] };
+  }
+}
+
+function writeData(data) {
   mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(PAGES_FILE, JSON.stringify(pages, null, 2), "utf8");
+  writeFileSync(PAGES_FILE, JSON.stringify(data, null, 2), "utf8");
+  try { chmodSync(PAGES_FILE, 0o600); } catch {}
+}
+
+const readPages = () => readData().pages;
+const writePages = (pages) => {
+  const d = readData();
+  d.pages = pages;
+  writeData(d);
 };
 
 const readPrompts = () => {
@@ -71,12 +156,37 @@ const getPageToken = (pageId) => {
   return page?.access_token ?? null;
 };
 
+// ── In-Memory Claim Sessions (OAuth exchange -> Claim page) ───────────────────
+const claimSessions = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, s] of claimSessions.entries()) {
+    if (s.expiresAt < now) claimSessions.delete(id);
+  }
+}, 300000);
+
+// ── Admin Auth Helper ─────────────────────────────────────────────────────────
+function isAdmin(req) {
+  const cookies = parseCookies(req);
+  const token = cookies.a2_admin_session || req.headers["x-admin-key"];
+  return Boolean(EFFECTIVE_ADMIN_KEY && token === EFFECTIVE_ADMIN_KEY);
+}
+
+function requireAdmin(req, res, next) {
+  if (!isAdmin(req)) {
+    return res.status(401).json({ error: "Unauthorized: Admin session required" });
+  }
+  next();
+}
+
+function getClientCode(req) {
+  const cookies = parseCookies(req);
+  return req.headers["x-invite-code"] || req.query.code || cookies.a2_client_code || null;
+}
+
 // ── Express setup ─────────────────────────────────────────────────────────────
 const app = express();
 app.use(cors({ origin: "*" }));
-
-// Raw body needed for webhook signature verification in the future.
-// express.json() is fine for now.
 app.use(express.json());
 
 // ── GET /api/health ───────────────────────────────────────────────────────────
@@ -84,14 +194,199 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+// ── GET /api/invite/:code ─────────────────────────────────────────────────────
+app.get("/api/invite/:code", (req, res) => {
+  const code = (req.params.code || "").trim().toUpperCase();
+  const { clients, pages } = readData();
+  const client = clients.find((c) => c.code.toUpperCase() === code);
+  if (!client) {
+    return res.status(404).json({ valid: false, error: "Este enlace no es válido. Pide tu acceso a Allia2." });
+  }
+
+  const usedPages = pages.filter((p) => p.clientId === client.id).length;
+  const isPaused = client.status === "paused";
+  const isFull = usedPages >= client.maxPages;
+
+  let message = "";
+  if (isPaused) {
+    message = "Este acceso está pausado temporalmente. Contacta a Allia2.";
+  } else if (isFull) {
+    message = `Ya se ha alcanzado el límite de Páginas para este acceso (${usedPages}/${client.maxPages}).`;
+  }
+
+  res.json({
+    valid: !isPaused && !isFull,
+    error: message || undefined,
+    client: {
+      id: client.id,
+      name: client.name,
+      maxPages: client.maxPages,
+      usedPages,
+      status: client.status,
+      isPaused,
+      isFull,
+    },
+  });
+});
+
+// ── Admin Endpoints ───────────────────────────────────────────────────────────
+app.post("/api/admin/login", (req, res) => {
+  const { key } = req.body ?? {};
+  if (!key || key !== EFFECTIVE_ADMIN_KEY) {
+    return res.status(401).json({ error: "Clave de administrador incorrecta" });
+  }
+  res.setHeader("Set-Cookie", `a2_admin_session=${EFFECTIVE_ADMIN_KEY}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/logout", (_req, res) => {
+  res.setHeader("Set-Cookie", "a2_admin_session=; Path=/; HttpOnly; Max-Age=0");
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/check", (req, res) => {
+  res.json({ ok: true, authenticated: isAdmin(req) });
+});
+
+app.get("/api/admin/clients", requireAdmin, (_req, res) => {
+  const { clients, pages } = readData();
+  const clientsWithPages = clients.map((c) => {
+    const assignedPages = pages.filter((p) => p.clientId === c.id).map(({ id, name }) => ({ id, name }));
+    return {
+      ...c,
+      usedPages: assignedPages.length,
+      pages: assignedPages,
+    };
+  });
+  res.json({ ok: true, clients: clientsWithPages });
+});
+
+app.post("/api/admin/clients", requireAdmin, (req, res) => {
+  const { name, maxPages } = req.body ?? {};
+  if (!name || typeof name !== "string" || !name.trim()) {
+    return res.status(400).json({ error: "El nombre del cliente es requerido" });
+  }
+
+  const limit = Math.max(1, parseInt(maxPages, 10) || 1);
+  const data = readData();
+  const newClient = {
+    id: "client_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+    name: name.trim(),
+    code: generateClientCode(),
+    maxPages: limit,
+    status: "active",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  data.clients.unshift(newClient);
+  writeData(data);
+  res.json({ ok: true, client: newClient });
+});
+
+app.patch("/api/admin/clients/:id", requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const { name, maxPages, status } = req.body ?? {};
+  const data = readData();
+  const client = data.clients.find((c) => c.id === id);
+  if (!client) return res.status(404).json({ error: "Cliente no encontrado" });
+
+  if (name && typeof name === "string") client.name = name.trim();
+  if (maxPages !== undefined) client.maxPages = Math.max(1, parseInt(maxPages, 10) || 1);
+  if (status === "active" || status === "paused") client.status = status;
+  client.updatedAt = new Date().toISOString();
+
+  writeData(data);
+  res.json({ ok: true, client });
+});
+
+app.delete("/api/admin/clients/:id", requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const data = readData();
+  const clientIdx = data.clients.findIndex((c) => c.id === id);
+  if (clientIdx < 0) return res.status(404).json({ error: "Cliente no encontrado" });
+
+  data.clients.splice(clientIdx, 1);
+  for (const p of data.pages) {
+    if (p.clientId === id) p.clientId = null;
+  }
+  writeData(data);
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/clients/:id/regenerate-code", requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const data = readData();
+  const client = data.clients.find((c) => c.id === id);
+  if (!client) return res.status(404).json({ error: "Cliente no encontrado" });
+
+  client.code = generateClientCode();
+  client.updatedAt = new Date().toISOString();
+  writeData(data);
+  res.json({ ok: true, code: client.code });
+});
+
+app.post("/api/admin/clients/:id/unlink-page/:pageId", requireAdmin, (req, res) => {
+  const { id, pageId } = req.params;
+  const data = readData();
+  const page = data.pages.find((p) => p.id === pageId);
+  if (!page) return res.status(404).json({ error: "Página no encontrada" });
+  if (page.clientId === id) {
+    page.clientId = null;
+    writeData(data);
+  }
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/clients/:id/link-page", requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const { pageId } = req.body ?? {};
+  if (!pageId) return res.status(400).json({ error: "pageId es requerido" });
+
+  const data = readData();
+  const client = data.clients.find((c) => c.id === id);
+  if (!client) return res.status(404).json({ error: "Cliente no encontrado" });
+
+  const page = data.pages.find((p) => p.id === pageId);
+  if (!page) return res.status(404).json({ error: "Página no encontrada" });
+
+  const used = data.pages.filter((p) => p.clientId === client.id).length;
+  if (used >= client.maxPages && page.clientId !== client.id) {
+    return res.status(400).json({ error: `El cliente ya alcanzó su cupo máximo (${used}/${client.maxPages})` });
+  }
+
+  page.clientId = client.id;
+  writeData(data);
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/pages", requireAdmin, (_req, res) => {
+  const { pages } = readData();
+  res.json({ ok: true, pages: pages.map(({ id, name, clientId }) => ({ id, name, clientId })) });
+});
+
 // ── GET /api/facebook/pages ───────────────────────────────────────────────────
-app.get("/api/facebook/pages", (_req, res) => {
-  res.json({ pages: readPages().map(({ id, name }) => ({ id, name })) });
+app.get("/api/facebook/pages", (req, res) => {
+  const { clients, pages } = readData();
+  if (isAdmin(req)) {
+    return res.json({ pages: pages.map(({ id, name }) => ({ id, name })) });
+  }
+  const code = getClientCode(req);
+  if (!code) {
+    return res.json({ pages: [] });
+  }
+  const client = clients.find((c) => c.code.toUpperCase() === code.trim().toUpperCase());
+  if (!client) {
+    return res.json({ pages: [] });
+  }
+  const clientPages = pages.filter((p) => p.clientId === client.id);
+  res.json({ pages: clientPages.map(({ id, name }) => ({ id, name })) });
 });
 
 // ── GET /api/facebook/pages/:id ───────────────────────────────────────────────
 app.get("/api/facebook/pages/:id", (req, res) => {
-  const page = readPages().find((p) => p.id === req.params.id);
+  const { pages } = readData();
+  const page = pages.find((p) => p.id === req.params.id);
   if (!page) {
     return res.status(404).json({ error: "Página no encontrada" });
   }
@@ -155,11 +450,27 @@ app.post("/api/pages/:id/generate-prompt", async (req, res) => {
 
 // ── POST /api/facebook/exchange ───────────────────────────────────────────────
 app.post("/api/facebook/exchange", async (req, res) => {
-  const { code, redirectUri } = req.body ?? {};
+  const { code, redirectUri, inviteCode } = req.body ?? {};
   if (!code || !redirectUri)
     return res.status(400).json({ error: "Missing code or redirectUri" });
+  if (!inviteCode || typeof inviteCode !== "string")
+    return res.status(403).json({ error: "Se requiere un código de invitación válido para conectar una Página." });
   if (!FB_APP_ID || !FB_APP_SECRET)
     return res.status(500).json({ error: "FB_APP_ID / FB_APP_SECRET not set in .env" });
+
+  const cleanCode = inviteCode.trim().toUpperCase();
+  const { clients, pages } = readData();
+  const client = clients.find((c) => c.code.toUpperCase() === cleanCode);
+  if (!client) {
+    return res.status(403).json({ error: "Código de invitación no válido o inexistente." });
+  }
+  if (client.status === "paused") {
+    return res.status(403).json({ error: "Este acceso está pausado temporalmente. Contacta a Allia2." });
+  }
+  const usedPages = pages.filter((p) => p.clientId === client.id).length;
+  if (usedPages >= client.maxPages) {
+    return res.status(403).json({ error: `El cupo de Páginas para este acceso está lleno (${usedPages}/${client.maxPages}).` });
+  }
 
   try {
     // 1. Exchange code -> user access token
@@ -188,21 +499,106 @@ app.post("/api/facebook/exchange", async (req, res) => {
     }
     const { data: fbPages } = await acctRes.json();
 
-    // 3. Persist to data/pages.json (gitignored)
-    const existing = readPages();
-    const updated = [...existing];
-    for (const p of fbPages) {
-      const i = updated.findIndex((e) => e.id === p.id);
-      if (i >= 0) updated[i] = p; else updated.push(p);
+    if (!Array.isArray(fbPages) || fbPages.length === 0) {
+      return res.status(400).json({ error: "No se encontraron Páginas de Facebook administradas con esta cuenta." });
     }
-    writePages(updated);
 
-    // 4. Respond ONLY id + name — never tokens to browser
-    res.json({ pages: fbPages.map(({ id, name }) => ({ id, name })) });
+    // 3. DO NOT persist all pages to disk yet! Store temporarily in claim session
+    const claimSessionId = "claim_" + Date.now() + "_" + Math.random().toString(36).slice(2, 9);
+    claimSessions.set(claimSessionId, {
+      candidatePages: fbPages,
+      inviteCode: cleanCode,
+      clientId: client.id,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    });
+
+    // 4. Return candidate pages (never tokens) and claimSessionId
+    res.json({
+      ok: true,
+      claimSessionId,
+      candidatePages: fbPages.map(({ id, name }) => ({ id, name })),
+      client: { name: client.name, maxPages: client.maxPages, usedPages },
+    });
   } catch (err) {
     console.error("[exchange]", err);
     res.status(500).json({ error: "Internal server error" });
   }
+});
+
+// ── POST /api/facebook/claim ──────────────────────────────────────────────────
+app.post("/api/facebook/claim", async (req, res) => {
+  const { claimSessionId, pageId, inviteCode } = req.body ?? {};
+  if (!claimSessionId || !pageId) {
+    return res.status(400).json({ error: "claimSessionId and pageId are required" });
+  }
+
+  const session = claimSessions.get(claimSessionId);
+  if (!session || session.expiresAt < Date.now()) {
+    return res.status(400).json({ error: "La sesión de conexión expiró. Por favor vuelve a conectar con tu enlace." });
+  }
+
+  const codeToVerify = (inviteCode || session.inviteCode || "").trim().toUpperCase();
+  const data = readData();
+  const client = data.clients.find((c) => c.code.toUpperCase() === codeToVerify);
+  if (!client) {
+    return res.status(403).json({ error: "Código de cliente inválido o no encontrado" });
+  }
+  if (client.status === "paused") {
+    return res.status(403).json({ error: "Este acceso está pausado temporalmente" });
+  }
+
+  const usedPages = data.pages.filter((p) => p.clientId === client.id).length;
+  if (usedPages >= client.maxPages) {
+    return res.status(403).json({ error: `El cupo de Páginas para este cliente ya está lleno (${usedPages}/${client.maxPages})` });
+  }
+
+  const chosenPage = session.candidatePages.find((p) => p.id === pageId);
+  if (!chosenPage) {
+    return res.status(400).json({ error: "Página no encontrada en la sesión actual" });
+  }
+
+  // Persist ONLY this chosen page
+  const existingIdx = data.pages.findIndex((p) => p.id === pageId);
+  const pageRecord = {
+    id: chosenPage.id,
+    name: chosenPage.name,
+    access_token: chosenPage.access_token,
+    clientId: client.id,
+    connectedAt: new Date().toISOString(),
+  };
+
+  if (existingIdx >= 0) {
+    data.pages[existingIdx] = pageRecord;
+  } else {
+    data.pages.push(pageRecord);
+  }
+  writeData(data);
+
+  // Auto-subscribe page to webhook in Meta
+  try {
+    const subRes = await fetch(
+      `https://graph.facebook.com/v21.0/${chosenPage.id}/subscribed_apps`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subscribed_fields: "messages,messaging_postbacks",
+          access_token: chosenPage.access_token,
+        }),
+      }
+    );
+    const subData = await subRes.json().catch(() => ({}));
+    console.log(`[claim] Subscribed page ${chosenPage.id} result:`, subData);
+  } catch (err) {
+    console.warn(`[claim] Auto-subscribe warning for ${chosenPage.id}:`, err.message);
+  }
+
+  // Delete claim session
+  claimSessions.delete(claimSessionId);
+
+  // Set client cookie (1 year)
+  res.setHeader("Set-Cookie", `a2_client_code=${client.code}; Path=/; SameSite=Lax; Max-Age=31536000`);
+  res.json({ ok: true, page: { id: pageRecord.id, name: pageRecord.name } });
 });
 
 // ── GET /api/facebook/webhook — Meta verification challenge ───────────────────
@@ -366,6 +762,17 @@ app.post("/api/facebook/webhook", async (req, res) => {
       if (!pageToken) {
         console.warn(`[webhook] No token for page ${pageId} — skipping reply`);
         continue;
+      }
+
+      // Check if client is paused — if paused, do not reply
+      const { clients, pages } = readData();
+      const pageObj = pages.find((p) => p.id === pageId);
+      if (pageObj?.clientId) {
+        const clientObj = clients.find((c) => c.id === pageObj.clientId);
+        if (clientObj && clientObj.status === "paused") {
+          console.log(`[webhook] Client "${clientObj.name}" (${clientObj.id}) is paused — skipping reply`);
+          continue;
+        }
       }
 
       // Resolve context for page

@@ -19,6 +19,7 @@ export function getRedirectUri(): string {
 }
 
 const CSRF_KEY = "fb_oauth_state";
+const INVITE_KEY = "a2_invite_code";
 
 export interface FacebookPage {
   id: string;
@@ -42,9 +43,13 @@ export type LoginResult = { mode: "demo" } | { mode: "real" };
  * - Con App ID: genera state CSRF, lo guarda en sessionStorage y redirige
  *   a la pantalla de OAuth de Facebook. No retorna (navegación completa).
  */
-export function startFacebookLogin(): LoginResult {
+export function startFacebookLogin(inviteCode?: string): LoginResult {
   if (!APP_ID) {
     return { mode: "demo" };
+  }
+
+  if (inviteCode) {
+    sessionStorage.setItem(INVITE_KEY, inviteCode.trim().toUpperCase());
   }
 
   // Generar state CSRF y guardarlo para verificarlo en /conectar/callback
@@ -61,7 +66,6 @@ export function startFacebookLogin(): LoginResult {
 
   window.location.href = `https://www.facebook.com/v21.0/dialog/oauth?${params}`;
 
-  // TypeScript necesita un return aunque nunca se alcanza
   return { mode: "real" };
 }
 
@@ -73,6 +77,14 @@ export function consumeCsrfState(): string | null {
   const val = sessionStorage.getItem(CSRF_KEY);
   sessionStorage.removeItem(CSRF_KEY);
   return val;
+}
+
+export function getStoredInviteCode(): string | null {
+  return sessionStorage.getItem(INVITE_KEY);
+}
+
+export function clearStoredInviteCode(): void {
+  sessionStorage.removeItem(INVITE_KEY);
 }
 
 /**
