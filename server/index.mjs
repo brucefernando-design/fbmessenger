@@ -8,7 +8,7 @@
 import express from "express";
 import cors from "cors";
 import http from "http";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, chmodSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -31,15 +31,18 @@ function loadEnv() {
 }
 
 const env = { ...process.env, ...loadEnv() };  // .env wins over process.env
-const { FB_APP_ID, FB_APP_SECRET, FB_VERIFY_TOKEN } = env;
+const { FB_APP_ID, FB_APP_SECRET, FB_VERIFY_TOKEN, GEMINI_API_KEY, GEMINI_MODEL } = env;
+const MODEL_NAME = GEMINI_MODEL || "gemini-2.5-flash-lite";
 const PORT = parseInt(env.SERVER_PORT ?? "8787", 10);
 
 console.log("[server] .env path:", join(ROOT, ".env"), "exists:", existsSync(join(ROOT, ".env")));
 console.log("[server] FB_VERIFY_TOKEN loaded:", FB_VERIFY_TOKEN ? "YES (length=" + FB_VERIFY_TOKEN.length + ")" : "NO — check .env");
+console.log("[server] GEMINI_API_KEY loaded:", GEMINI_API_KEY ? "YES (model=" + MODEL_NAME + ")" : "NO (echo fallback mode)");
 
 // ── Data helpers ──────────────────────────────────────────────────────────────
 const DATA_DIR = join(ROOT, "data");
 const PAGES_FILE = join(DATA_DIR, "pages.json");
+const PROMPTS_FILE = join(DATA_DIR, "prompts.json");
 
 const readPages = () => {
   if (!existsSync(PAGES_FILE)) return [];
@@ -49,6 +52,17 @@ const readPages = () => {
 const writePages = (pages) => {
   mkdirSync(DATA_DIR, { recursive: true });
   writeFileSync(PAGES_FILE, JSON.stringify(pages, null, 2), "utf8");
+};
+
+const readPrompts = () => {
+  if (!existsSync(PROMPTS_FILE)) return {};
+  try { return JSON.parse(readFileSync(PROMPTS_FILE, "utf8")); } catch { return {}; }
+};
+
+const writePrompts = (prompts) => {
+  mkdirSync(DATA_DIR, { recursive: true });
+  writeFileSync(PROMPTS_FILE, JSON.stringify(prompts, null, 2), "utf8");
+  try { chmodSync(PROMPTS_FILE, 0o600); } catch {}
 };
 
 /** Returns the page access_token for a given page id, or null. */
@@ -83,6 +97,31 @@ app.get("/api/facebook/pages/:id", (req, res) => {
   }
   // Devolver info sin access_token
   res.json({ page: { id: page.id, name: page.name, category: page.category || "Página de Facebook" } });
+});
+
+// ── GET /api/pages/:id/prompt ────────────────────────────────────────────────
+app.get("/api/pages/:id/prompt", (req, res) => {
+  const prompts = readPrompts();
+  const pagePrompt = prompts[req.params.id];
+  res.json({ instructions: pagePrompt?.instructions || "" });
+});
+
+// ── PUT /api/pages/:id/prompt ────────────────────────────────────────────────
+app.put("/api/pages/:id/prompt", (req, res) => {
+  const { instructions } = req.body ?? {};
+  if (typeof instructions !== "string") {
+    return res.status(400).json({ error: "instructions must be a string" });
+  }
+  if (instructions.length > 8000) {
+    return res.status(400).json({ error: "instructions exceed 8000 characters limit" });
+  }
+  const prompts = readPrompts();
+  prompts[req.params.id] = {
+    instructions,
+    updatedAt: new Date().toISOString(),
+  };
+  writePrompts(prompts);
+  res.json({ ok: true, instructions });
 });
 
 // ── POST /api/facebook/exchange ───────────────────────────────────────────────
@@ -138,6 +177,64 @@ app.post("/api/facebook/exchange", async (req, res) => {
 });
 
 // ── GET /api/facebook/webhook — Meta verification challenge ───────────────────
+// ── Gemini AI Assistant ───────────────────────────────────────────────────────
+const ALLIA2_SYSTEM_RULES = `Eres el asistente oficial de Allia2 para Facebook Messenger de este negocio.
+REGLAS OBLIGATORIAS (siempre aplican, máxima prioridad):
+1. Responde siempre en Español de México, en tono amable y profesional, y de forma breve (estilo WhatsApp/Messenger: 1 a 3 párrafos cortos).
+2. NUNCA inventes precios, horarios ni disponibilidad. Si la información no está explícitamente en el texto del negocio, di cordialmente que un humano lo confirmará.
+3. NUNCA pidas contraseñas de Facebook ni credenciales sensibles.
+4. NUNCA des diagnósticos médicos ni legales definitivos.
+5. Si piden hablar con un humano o presentan una queja, ofrece cordialmente que un asesor se comunicará con ellos.`;
+
+async function generateAIResponse(userText, pageInstructions) {
+  if (!GEMINI_API_KEY) {
+    return null; // Fallback to echo if no key
+  }
+
+  const systemInstruction = `${ALLIA2_SYSTEM_RULES}\n\nTEXTO Y REGLAS DEL NEGOCIO:\n${pageInstructions || "No hay texto adicional configurado. Saluda amablemente y ofrece ayuda básica."}`;
+
+  // Models to attempt: primary configured, then fallbacks if model is retired/unavailable
+  const modelsToTry = [MODEL_NAME, "gemini-2.5-flash", "gemini-3.5-flash-lite"];
+  const uniqueModels = [...new Set(modelsToTry)];
+
+  for (const model of uniqueModels) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents: [{ role: "user", parts: [{ text: userText }] }],
+          generationConfig: { maxOutputTokens: 500, temperature: 0.7 },
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        console.warn(`[gemini] Model ${model} returned ${res.status}:`, errText);
+        if (res.status === 404) continue; // Try fallback model if retired
+        return "En un momento te confirma un asesor.";
+      }
+
+      const data = await res.json();
+      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (reply) return reply;
+    } catch (err) {
+      console.error(`[gemini] Error with model ${model}:`, err.message);
+      return "En un momento te confirma un asesor.";
+    }
+  }
+
+  return "En un momento te confirma un asesor.";
+}
+
+// ── GET /api/facebook/webhook — Meta verification challenge ───────────────────
 app.get("/api/facebook/webhook", (req, res) => {
   const mode      = req.query["hub.mode"];
   const token     = req.query["hub.verify_token"];
@@ -174,14 +271,24 @@ app.post("/api/facebook/webhook", async (req, res) => {
       // Log — never log tokens
       console.log(`[webhook] pageId=${pageId} senderId=${senderId} text="${text}"`);
 
-      // Echo reply if we have a page access token
+      // Page token check
       const pageToken = getPageToken(pageId);
       if (!pageToken) {
         console.warn(`[webhook] No token for page ${pageId} — skipping reply`);
         continue;
       }
 
-      const replyText = `Allia2 recibió: ${text}`;
+      // Generate response via Gemini or echo fallback
+      let replyText;
+      if (GEMINI_API_KEY) {
+        const prompts = readPrompts();
+        const pagePrompt = prompts[pageId]?.instructions || "";
+        const aiReply = await generateAIResponse(text, pagePrompt);
+        replyText = aiReply || `Allia2 recibió: ${text}`;
+      } else {
+        replyText = `Allia2 recibió: ${text}`;
+      }
+
       try {
         const msgRes = await fetch(
           `https://graph.facebook.com/v21.0/${pageId}/messages`,
@@ -199,7 +306,7 @@ app.post("/api/facebook/webhook", async (req, res) => {
           const err = await msgRes.json().catch(() => ({}));
           console.error("[webhook] Failed to send reply:", err);
         } else {
-          console.log(`[webhook] Echo sent to ${senderId}`);
+          console.log(`[webhook] Sent reply to ${senderId}: "${replyText.slice(0, 60)}..."`);
         }
       } catch (err) {
         console.error("[webhook] Network error sending reply:", err);

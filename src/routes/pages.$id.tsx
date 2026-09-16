@@ -51,10 +51,9 @@ function PageWorkspace() {
       });
   }, [id]);
 
-  const mockPage = mockPages.find((p) => p.id === id);
-  const page = apiPage || mockPage;
+  const page = apiPage;
 
-  if (apiLoading && !mockLoaded) {
+  if (apiLoading) {
     return (
       <div className="flex flex-1 items-center justify-center p-12">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -213,6 +212,9 @@ function ResumenTab({
         </div>
       </div>
 
+      {/* Prompt Editor */}
+      <PromptEditor pageId={page.id} />
+
       {/* Webhook */}
       <div className="rounded-xl border border-border bg-card p-5">
         <h2 className="text-sm font-semibold text-foreground">Webhook de Messenger</h2>
@@ -265,6 +267,101 @@ function ResumenTab({
             Desconectar
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PromptEditor({ pageId }: { pageId: string }) {
+  const [instructions, setInstructions] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/pages/${pageId}/prompt`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((data: { instructions?: string }) => {
+        setInstructions(data?.instructions || "");
+        setLoading(false);
+      })
+      .catch(() => {
+        setInstructions("");
+        setLoading(false);
+      });
+  }, [pageId]);
+
+  async function handleSave() {
+    setSaving(true);
+    setStatusMsg(null);
+    try {
+      const res = await fetch(`/api/pages/${pageId}/prompt`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructions }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        setStatusMsg({ type: "success", text: "Instrucciones guardadas correctamente." });
+      } else {
+        setStatusMsg({ type: "error", text: data.error || "Error al guardar las instrucciones." });
+      }
+    } catch {
+      setStatusMsg({ type: "error", text: "No se pudo conectar con el servidor." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Cómo debe contestar</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Allia2 ya pone reglas de seguridad. Aquí va horario, precios, tono.
+          </p>
+        </div>
+        <span className="text-xs font-mono text-muted-foreground self-end sm:self-auto">
+          {instructions.length} / 8000
+        </span>
+      </div>
+
+      <div className="mt-3">
+        {loading ? (
+          <div className="flex h-32 items-center justify-center">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          </div>
+        ) : (
+          <textarea
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value.slice(0, 8000))}
+            rows={6}
+            placeholder="Escribe aquí cómo debe responder el asistente: horarios de atención, precios base, servicios ofrecidos, preguntas frecuentes y el tono del negocio..."
+            className="w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          {statusMsg && (
+            <span
+              className={`text-xs ${
+                statusMsg.type === "success" ? "text-success font-medium" : "text-destructive"
+              }`}
+            >
+              {statusMsg.text}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving || loading}
+          className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+        >
+          {saving ? "Guardando…" : "Guardar"}
+        </button>
       </div>
     </div>
   );
