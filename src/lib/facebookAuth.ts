@@ -10,9 +10,13 @@
  */
 
 const APP_ID = import.meta.env.VITE_FB_APP_ID as string | undefined;
-const REDIRECT_URI =
-  (import.meta.env.VITE_FB_REDIRECT_URI as string | undefined) ??
-  `${window.location.origin}/conectar/callback`;
+
+export function getRedirectUri(): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}/conectar/callback`;
+  }
+  return (import.meta.env.VITE_FB_REDIRECT_URI as string | undefined) || "https://fbm.allia2.com.mx/conectar/callback";
+}
 
 const CSRF_KEY = "fb_oauth_state";
 
@@ -49,7 +53,7 @@ export function startFacebookLogin(): LoginResult {
 
   const params = new URLSearchParams({
     client_id: APP_ID,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: getRedirectUri(),
     state,
     scope: "pages_show_list,pages_messaging,pages_manage_metadata",
     response_type: "code",
@@ -82,7 +86,7 @@ export async function exchangeCode(_code: string): Promise<never> {
   const res = await fetch("/api/facebook/exchange", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code: _code, redirectUri: REDIRECT_URI }),
+    body: JSON.stringify({ code: _code, redirectUri: getRedirectUri() }),
   });
 
   if (!res.ok) {

@@ -1,6 +1,6 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { consumeCsrfState } from "@/lib/facebookAuth";
+import { consumeCsrfState, getRedirectUri } from "@/lib/facebookAuth";
 
 export const Route = createFileRoute("/conectar/callback")({
   head: () => ({
@@ -10,10 +10,6 @@ export const Route = createFileRoute("/conectar/callback")({
 });
 
 type Status = "validating" | "exchanging" | "success" | "csrf_error" | "fb_error" | "exchange_error";
-
-const REDIRECT_URI =
-  (import.meta.env.VITE_FB_REDIRECT_URI as string | undefined) ??
-  (typeof window !== "undefined" ? `${window.location.origin}/conectar/callback` : "");
 
 function CallbackPage() {
   const navigate = useNavigate();
@@ -51,7 +47,7 @@ function CallbackPage() {
     fetch("/api/facebook/exchange", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, redirectUri: REDIRECT_URI }),
+      body: JSON.stringify({ code, redirectUri: getRedirectUri() }),
     })
       .then(async (res) => {
         if (!res.ok) {
