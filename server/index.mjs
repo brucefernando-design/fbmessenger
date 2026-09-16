@@ -64,9 +64,24 @@ app.use(cors({ origin: "*" }));
 // express.json() is fine for now.
 app.use(express.json());
 
+// ── GET /api/health ───────────────────────────────────────────────────────────
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 // ── GET /api/facebook/pages ───────────────────────────────────────────────────
 app.get("/api/facebook/pages", (_req, res) => {
   res.json({ pages: readPages().map(({ id, name }) => ({ id, name })) });
+});
+
+// ── GET /api/facebook/pages/:id ───────────────────────────────────────────────
+app.get("/api/facebook/pages/:id", (req, res) => {
+  const page = readPages().find((p) => p.id === req.params.id);
+  if (!page) {
+    return res.status(404).json({ error: "Página no encontrada" });
+  }
+  // Devolver info sin access_token
+  res.json({ page: { id: page.id, name: page.name, category: page.category || "Página de Facebook" } });
 });
 
 // ── POST /api/facebook/exchange ───────────────────────────────────────────────
@@ -233,11 +248,34 @@ app.post("/api/facebook/subscribe", async (_req, res) => {
   res.json({ ok: allOk, pages: results });
 });
 
+// ── Static Frontend in Production ───────────────────────────────────────────
+const PUBLIC_DIR = existsSync(join(ROOT, ".output", "public"))
+  ? join(ROOT, ".output", "public")
+  : existsSync(join(ROOT, "dist"))
+  ? join(ROOT, "dist")
+  : null;
+
+if (PUBLIC_DIR) {
+  app.use(express.static(PUBLIC_DIR));
+  // Servir assets y fallback a index o 404
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api/")) return next();
+    const indexHtml = join(PUBLIC_DIR, "index.html");
+    if (existsSync(indexHtml)) {
+      return res.sendFile(indexHtml);
+    }
+    next();
+  });
+  console.log(`[server] Serving static frontend from ${PUBLIC_DIR}`);
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`[server] Listening on http://localhost:${PORT}`);
+app.listen(PORT, "127.0.0.1", () => {
+  console.log(`[server] Listening on http://127.0.0.1:${PORT}`);
   console.log("[server] Routes registered:");
+  console.log("  GET  /api/health");
   console.log("  GET  /api/facebook/pages");
+  console.log("  GET  /api/facebook/pages/:id");
   console.log("  POST /api/facebook/exchange");
   console.log("  GET  /api/facebook/webhook  ← Meta verify challenge");
   console.log("  POST /api/facebook/webhook  ← incoming messages");

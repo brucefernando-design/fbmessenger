@@ -22,16 +22,13 @@ npm run server
 4. Copia **App ID** y **App Secret** → pégalos en `.env` (`FB_APP_ID`, `FB_APP_SECRET`).
 5. Sin App Review, solo admins/testers de la app pueden autorizar.
 
-## Configurar Webhook de Messenger
+## Configuración para Meta Developers (Producción fbm.allia2.com.mx)
 
-1. En `.env` pon `FB_VERIFY_TOKEN=<cualquier_string_secreto>`.
-2. Corre: `ngrok http 8787` — copia la URL `https://xxxx.ngrok-free.app`.
-3. En Meta → tu App → **Messenger** → **Webhooks** → editar:
-   - **Callback URL**: `https://xxxx.ngrok-free.app/api/facebook/webhook`
-   - **Verify Token**: el mismo valor de `FB_VERIFY_TOKEN`
-   - Suscríbete a: `messages`, `messaging_postbacks`
-4. Conecta una Página OAuth, ve a `/pages/<id>` → **Activar webhook (prueba)**.
-5. Envía un mensaje a la Página desde Messenger — verás el eco en el servidor.
+- **Dominio de la App**: `fbm.allia2.com.mx`
+- **OAuth Redirect URI**: `https://fbm.allia2.com.mx/conectar/callback`
+- **Webhook Callback URL**: `https://fbm.allia2.com.mx/api/facebook/webhook`
+- **Verify Token**: el valor configurado en `FB_VERIFY_TOKEN`
+- **Campos de Webhook**: `messages`, `messaging_postbacks` en tu página vinculada (ej. `Fta Laredo`)
 
 > ⚠️ `data/pages.json` y `.env` están en `.gitignore`. No los subas a GitHub.
 > El `FB_APP_SECRET` y `FB_VERIFY_TOKEN` NUNCA van en `src/` ni en variables `VITE_`.

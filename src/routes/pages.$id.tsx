@@ -1,23 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Toggle } from "@/components/Toggle";
 import { getPageById, type MockPage } from "@/lib/mockData";
 import { removePage, updatePage, useStoredPages } from "@/lib/pageStore";
 
-
 export const Route = createFileRoute("/pages/$id")({
-  head: ({ params }) => {
-    const page = getPageById(params.id);
-    return {
-      meta: [
-        { title: `${page?.name ?? "Página"} — Allia2` },
-        { name: "description", content: `Panel de gestión para ${page?.name ?? "esta Página"}.` },
-        { property: "og:title", content: `${page?.name ?? "Página"} — Allia2` },
-        { property: "og:description", content: `Panel de gestión para ${page?.name ?? "esta Página"}.` },
-        { property: "og:type", content: "website" },
-      ],
-    };
-  },
   component: PageWorkspace,
 });
 
@@ -26,12 +13,54 @@ type Tab = "resumen" | "ficha" | "citas" | "mensajes";
 function PageWorkspace() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const { pages, loaded } = useStoredPages();
-  const page = pages.find((p) => p.id === id);
+  const { pages: mockPages, loaded: mockLoaded } = useStoredPages();
+  const [apiPage, setApiPage] = useState<MockPage | null>(null);
+  const [apiLoading, setApiLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("resumen");
   const [showDisconnect, setShowDisconnect] = useState(false);
 
-  if (!loaded) return null;
+  useEffect(() => {
+    fetch(`/api/facebook/pages/${id}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((data: { page: { id: string; name: string; category?: string } }) => {
+        if (data.page) {
+          setApiPage({
+            id: data.page.id,
+            name: data.page.name,
+            initials: data.page.name.slice(0, 2).toUpperCase(),
+            category: data.page.category || "Página de Facebook",
+            status: "conectada",
+            lastMessage: "Activo",
+            agentEnabled: false,
+            connectedAt: new Date().toISOString().slice(0, 10),
+            authorizedAgo: "reciente",
+            businessInfo: {
+              name: data.page.name,
+              hours: "Lun–Vie 9:00–18:00",
+              services: "Atención vía Messenger",
+              greeting: `¡Hola! Bienvenido a ${data.page.name}. ¿Cómo podemos ayudarte hoy?`,
+            },
+            appointments: [],
+          });
+        }
+        setApiLoading(false);
+      })
+      .catch(() => {
+        setApiPage(null);
+        setApiLoading(false);
+      });
+  }, [id]);
+
+  const mockPage = mockPages.find((p) => p.id === id);
+  const page = apiPage || mockPage;
+
+  if (apiLoading && !mockLoaded) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   if (!page) {
     return (
@@ -45,12 +74,16 @@ function PageWorkspace() {
   }
 
   const agentEnabled = page.agentEnabled;
-  const setAgentEnabled = (enabled: boolean) =>
-    updatePage(page.id, {
-      agentEnabled: enabled,
-      status: enabled ? "agente_activo" : "conectada",
-    });
-
+  const setAgentEnabled = (enabled: boolean) => {
+    if (apiPage) {
+      setApiPage({ ...apiPage, agentEnabled: enabled, status: enabled ? "agente_activo" : "conectada" });
+    } else {
+      updatePage(page.id, {
+        agentEnabled: enabled,
+        status: enabled ? "agente_activo" : "conectada",
+      });
+    }
+  };
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "resumen", label: "Resumen" },
