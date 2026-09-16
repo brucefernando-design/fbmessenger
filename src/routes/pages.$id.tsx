@@ -36,9 +36,9 @@ function PageWorkspace() {
             authorizedAgo: "reciente",
             businessInfo: {
               name: data.page.name,
-              hours: "Lun–Vie 9:00–18:00",
-              services: "Atención vía Messenger",
-              greeting: `¡Hola! Bienvenido a ${data.page.name}. ¿Cómo podemos ayudarte hoy?`,
+              hours: "",
+              services: "",
+              greeting: "",
             },
             appointments: [],
           });
@@ -273,96 +273,251 @@ function ResumenTab({
 }
 
 function PromptEditor({ pageId }: { pageId: string }) {
-  const [instructions, setInstructions] = useState("");
+  const [raw, setRaw] = useState("");
+  const [generated, setGenerated] = useState("");
+  const [useCustom, setUseCustom] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [savingRaw, setSavingRaw] = useState(false);
+  const [savingPrompt, setSavingPrompt] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [rawMsg, setRawMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [promptMsg, setPromptMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     fetch(`/api/pages/${pageId}/prompt`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((data: { instructions?: string }) => {
-        setInstructions(data?.instructions || "");
+      .then((data: { raw?: string; generated?: string; useCustom?: boolean }) => {
+        setRaw(data?.raw || "");
+        setGenerated(data?.generated || "");
+        setUseCustom(data?.useCustom ?? true);
         setLoading(false);
       })
       .catch(() => {
-        setInstructions("");
+        setRaw("");
+        setGenerated("");
+        setUseCustom(true);
         setLoading(false);
       });
   }, [pageId]);
 
-  async function handleSave() {
-    setSaving(true);
-    setStatusMsg(null);
+  async function handleSaveRaw() {
+    setSavingRaw(true);
+    setRawMsg(null);
     try {
       const res = await fetch(`/api/pages/${pageId}/prompt`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instructions }),
+        body: JSON.stringify({ raw, generated, useCustom }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
-        setStatusMsg({ type: "success", text: "Instrucciones guardadas correctamente." });
+        setRawMsg({ type: "success", text: "Información guardada correctamente." });
       } else {
-        setStatusMsg({ type: "error", text: data.error || "Error al guardar las instrucciones." });
+        setRawMsg({ type: "error", text: data.error || "Error al guardar información." });
       }
     } catch {
-      setStatusMsg({ type: "error", text: "No se pudo conectar con el servidor." });
+      setRawMsg({ type: "error", text: "No se pudo conectar con el servidor." });
     } finally {
-      setSaving(false);
+      setSavingRaw(false);
+    }
+  }
+
+  async function handleGeneratePrompt() {
+    if (!raw.trim()) {
+      setRawMsg({ type: "error", text: "Escribe la información de tu negocio primero." });
+      return;
+    }
+    setGenerating(true);
+    setPromptMsg(null);
+    try {
+      const res = await fetch(`/api/pages/${pageId}/generate-prompt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.generated) {
+        setGenerated(data.generated);
+        setUseCustom(true);
+        // Persist the generated prompt directly
+        await fetch(`/api/pages/${pageId}/prompt`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ raw, generated: data.generated, useCustom: true }),
+        });
+        setPromptMsg({ type: "success", text: "Prompt generado con IA y guardado." });
+      } else {
+        setPromptMsg({ type: "error", text: data.error || "Error al generar prompt con IA." });
+      }
+    } catch {
+      setPromptMsg({ type: "error", text: "Error de red al contactar al servidor." });
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleSavePrompt() {
+    setSavingPrompt(true);
+    setPromptMsg(null);
+    try {
+      const res = await fetch(`/api/pages/${pageId}/prompt`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw, generated, useCustom }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        setPromptMsg({ type: "success", text: "Prompt guardado correctamente." });
+      } else {
+        setPromptMsg({ type: "error", text: data.error || "Error al guardar el prompt." });
+      }
+    } catch {
+      setPromptMsg({ type: "error", text: "No se pudo conectar con el servidor." });
+    } finally {
+      setSavingPrompt(false);
     }
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">Cómo debe contestar</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Allia2 ya pone reglas de seguridad. Aquí va horario, precios, tono.
-          </p>
-        </div>
-        <span className="text-xs font-mono text-muted-foreground self-end sm:self-auto">
-          {instructions.length} / 8000
-        </span>
+    <div className="rounded-xl border border-border bg-card p-5 space-y-6">
+      {/* Header & Help note */}
+      <div className="border-b border-border pb-4">
+        <h2 className="text-base font-semibold text-foreground">Configuración del Agente IA</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Allia2 ya pone reglas de seguridad. Aquí va horario, precios, tono.
+        </p>
       </div>
 
-      <div className="mt-3">
-        {loading ? (
-          <div className="flex h-32 items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      {loading ? (
+        <div className="flex h-36 items-center justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        </div>
+      ) : (
+        <>
+          {/* Section 1: Información de tu negocio */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-foreground">
+                Información de tu negocio
+              </label>
+              <span className="font-mono text-xs text-muted-foreground">
+                {raw.length} / 20000
+              </span>
+            </div>
+            <textarea
+              value={raw}
+              onChange={(e) => setRaw(e.target.value.slice(0, 20000))}
+              rows={6}
+              placeholder="Describe aquí tu negocio: servicios, horarios, precios, ubicación, políticas..."
+              className="w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
+              <div>
+                {rawMsg && (
+                  <span
+                    className={`text-xs ${
+                      rawMsg.type === "success" ? "text-success font-medium" : "text-destructive"
+                    }`}
+                  >
+                    {rawMsg.text}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveRaw}
+                  disabled={savingRaw || generating}
+                  className="rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+                >
+                  {savingRaw ? "Guardando…" : "Guardar información"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGeneratePrompt}
+                  disabled={generating || !raw.trim()}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {generating ? (
+                    <>
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
+                      Generando con IA…
+                    </>
+                  ) : (
+                    <>
+                      <span aria-hidden="true">✨</span>
+                      Generar prompt con IA
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
-        ) : (
-          <textarea
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value.slice(0, 8000))}
-            rows={6}
-            placeholder="Escribe aquí cómo debe responder el asistente: horarios de atención, precios base, servicios ofrecidos, preguntas frecuentes y el tono del negocio..."
-            className="w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-        )}
-      </div>
 
-      <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div>
-          {statusMsg && (
-            <span
-              className={`text-xs ${
-                statusMsg.type === "success" ? "text-success font-medium" : "text-destructive"
-              }`}
-            >
-              {statusMsg.text}
-            </span>
-          )}
-        </div>
-        <button
-          onClick={handleSave}
-          disabled={saving || loading}
-          className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-        >
-          {saving ? "Guardando…" : "Guardar"}
-        </button>
-      </div>
+          <hr className="border-border" />
+
+          {/* Section 2: Prompt generado */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-foreground">
+                Prompt generado — puedes editarlo
+              </label>
+              <span className="font-mono text-xs text-muted-foreground">
+                {generated.length} / 20000
+              </span>
+            </div>
+            <textarea
+              value={generated}
+              onChange={(e) => setGenerated(e.target.value.slice(0, 20000))}
+              rows={7}
+              placeholder="El prompt estructurado por la IA aparecerá aquí tras pulsar 'Generar prompt con IA'. También puedes redactarlo o ajustarlo libremente..."
+              className="w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary font-mono text-xs leading-relaxed"
+            />
+
+            {/* Switch useCustom */}
+            <div className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-3">
+              <div className="space-y-0.5">
+                <span className="text-xs font-semibold text-foreground">
+                  Usar este prompt personalizado
+                </span>
+                <p className="text-[11px] text-muted-foreground">
+                  {useCustom
+                    ? "El asistente responderá usando este prompt estructurado."
+                    : "El asistente responderá usando directamente el texto de 'Información de tu negocio'."}
+                </p>
+              </div>
+              <Toggle
+                checked={useCustom}
+                onChange={setUseCustom}
+                label="Usar este prompt personalizado"
+              />
+            </div>
+
+            {/* Action Save Prompt */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
+              <div>
+                {promptMsg && (
+                  <span
+                    className={`text-xs ${
+                      promptMsg.type === "success" ? "text-success font-medium" : "text-destructive"
+                    }`}
+                  >
+                    {promptMsg.text}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleSavePrompt}
+                disabled={savingPrompt || generating}
+                className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                {savingPrompt ? "Guardando…" : "Guardar prompt"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

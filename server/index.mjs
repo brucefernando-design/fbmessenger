@@ -102,26 +102,55 @@ app.get("/api/facebook/pages/:id", (req, res) => {
 // ── GET /api/pages/:id/prompt ────────────────────────────────────────────────
 app.get("/api/pages/:id/prompt", (req, res) => {
   const prompts = readPrompts();
-  const pagePrompt = prompts[req.params.id];
-  res.json({ instructions: pagePrompt?.instructions || "" });
+  const pagePrompt = prompts[req.params.id] || {};
+  res.json({
+    raw: pagePrompt.raw || "",
+    generated: pagePrompt.generated || "",
+    useCustom: pagePrompt.useCustom ?? true,
+    updatedAt: pagePrompt.updatedAt || "",
+  });
 });
 
 // ── PUT /api/pages/:id/prompt ────────────────────────────────────────────────
 app.put("/api/pages/:id/prompt", (req, res) => {
-  const { instructions } = req.body ?? {};
-  if (typeof instructions !== "string") {
-    return res.status(400).json({ error: "instructions must be a string" });
+  const { raw, generated, useCustom } = req.body ?? {};
+  if (raw !== undefined && (typeof raw !== "string" || raw.length > 20000)) {
+    return res.status(400).json({ error: "raw must be string up to 20000 characters" });
   }
-  if (instructions.length > 8000) {
-    return res.status(400).json({ error: "instructions exceed 8000 characters limit" });
+  if (generated !== undefined && (typeof generated !== "string" || generated.length > 20000)) {
+    return res.status(400).json({ error: "generated must be string up to 20000 characters" });
   }
   const prompts = readPrompts();
+  const existing = prompts[req.params.id] || {};
   prompts[req.params.id] = {
-    instructions,
+    raw: raw !== undefined ? raw : (existing.raw || ""),
+    generated: generated !== undefined ? generated : (existing.generated || ""),
+    useCustom: useCustom !== undefined ? Boolean(useCustom) : (existing.useCustom ?? true),
     updatedAt: new Date().toISOString(),
   };
   writePrompts(prompts);
-  res.json({ ok: true, instructions });
+  res.json({ ok: true, prompt: prompts[req.params.id] });
+});
+
+// ── POST /api/pages/:id/generate-prompt ──────────────────────────────────────
+app.post("/api/pages/:id/generate-prompt", async (req, res) => {
+  const { raw } = req.body ?? {};
+  if (!raw || typeof raw !== "string") {
+    return res.status(400).json({ error: "raw is required and must be a string" });
+  }
+  if (raw.length > 20000) {
+    return res.status(400).json({ error: "raw exceeds 20000 characters limit" });
+  }
+  if (!GEMINI_API_KEY) {
+    return res.status(503).json({ error: "GEMINI_API_KEY no configurada en el servidor" });
+  }
+  try {
+    const generated = await generateStructuredPrompt(raw);
+    res.json({ generated });
+  } catch (err) {
+    console.error("[generate-prompt] Error:", err.message);
+    res.status(500).json({ error: "Error al generar prompt con Gemini" });
+  }
 });
 
 // ── POST /api/facebook/exchange ───────────────────────────────────────────────
@@ -234,6 +263,67 @@ async function generateAIResponse(userText, pageInstructions) {
   return "En un momento te confirma un asesor.";
 }
 
+async function generateStructuredPrompt(rawText) {
+  if (!GEMINI_API_KEY) {
+    throw new Error("GEMINI_API_KEY no configurada en el servidor");
+  }
+
+  const promptInstruction = `Eres un experto en diseñar instrucciones (prompts) para agentes de atención al cliente en Facebook Messenger.
+A partir de la siguiente información proporcionada por el dueño de un negocio, estructura un conjunto de instrucciones claro, conciso y profesional para el agente de IA.
+
+REGLAS OBLIGATORIAS:
+1. NO inventes información, precios, direcciones ni horarios que no estén presentes en el texto original.
+2. Si el texto no menciona ciertos datos clave, instruye al agente a indicar amablemente al cliente que un asesor humano le confirmará los detalles.
+3. Organiza la información con claridad:
+   - Identidad y tono del negocio
+   - Servicios / Productos ofrecidos
+   - Precios y métodos de pago (solo los mencionados)
+   - Horarios y ubicación (solo los mencionados)
+   - Escalamiento a asesor humano cuando no se tenga la respuesta
+4. Responde ÚNICAMENTE con el prompt generado, sin comentarios ni preámbulos.
+
+Información del negocio:
+${rawText}`;
+
+  const modelsToTry = [MODEL_NAME, "gemini-2.5-flash", "gemini-3.5-flash-lite"];
+  const uniqueModels = [...new Set(modelsToTry)];
+
+  for (const model of uniqueModels) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: promptInstruction }] }],
+          generationConfig: { maxOutputTokens: 1200, temperature: 0.2 },
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        console.warn(`[generateStructuredPrompt] Model ${model} returned ${res.status}:`, errText);
+        if (res.status === 404) continue;
+        throw new Error(`Gemini API returned ${res.status}`);
+      }
+
+      const data = await res.json();
+      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (reply) return reply;
+    } catch (err) {
+      console.error(`[generateStructuredPrompt] Error with model ${model}:`, err.message);
+      if (model === uniqueModels[uniqueModels.length - 1]) throw err;
+    }
+  }
+
+  throw new Error("No se pudo generar el prompt con los modelos disponibles");
+}
+
 // ── GET /api/facebook/webhook — Meta verification challenge ───────────────────
 app.get("/api/facebook/webhook", (req, res) => {
   const mode      = req.query["hub.mode"];
@@ -278,15 +368,28 @@ app.post("/api/facebook/webhook", async (req, res) => {
         continue;
       }
 
-      // Generate response via Gemini or echo fallback
+      // Resolve context for page
+      const prompts = readPrompts();
+      const pagePromptData = prompts[pageId] || {};
+      const useCustom = pagePromptData.useCustom ?? true;
+      const raw = pagePromptData.raw?.trim() || "";
+      const generated = pagePromptData.generated?.trim() || "";
+
+      let contextText = "";
+      if (useCustom && generated) {
+        contextText = generated;
+      } else if (raw) {
+        contextText = raw;
+      }
+
       let replyText;
-      if (GEMINI_API_KEY) {
-        const prompts = readPrompts();
-        const pagePrompt = prompts[pageId]?.instructions || "";
-        const aiReply = await generateAIResponse(text, pagePrompt);
-        replyText = aiReply || `Allia2 recibió: ${text}`;
+      if (!contextText) {
+        replyText = "En un momento te atiende un asesor.";
+      } else if (!GEMINI_API_KEY) {
+        replyText = "En un momento te confirma un asesor.";
       } else {
-        replyText = `Allia2 recibió: ${text}`;
+        const aiReply = await generateAIResponse(text, contextText);
+        replyText = aiReply || "En un momento te confirma un asesor.";
       }
 
       try {
@@ -442,4 +545,14 @@ app.listen(PORT, "127.0.0.1", () => {
     console.warn("[server] WARNING: FB_APP_ID / FB_APP_SECRET missing in .env");
   if (!FB_VERIFY_TOKEN)
     console.warn("[server] WARNING: FB_VERIFY_TOKEN missing in .env — GET /api/facebook/webhook will always 403");
+});
+
+process.on("SIGTERM", () => {
+  console.log("[server] Received SIGTERM, shutting down cleanly");
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  console.log("[server] Received SIGINT, shutting down cleanly");
+  process.exit(0);
 });
