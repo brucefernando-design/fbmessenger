@@ -27,8 +27,16 @@ function PagesList() {
   useEffect(() => {
     fetch("/api/facebook/pages")
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((data: { pages: ApiPage[] }) => { setApiPages(data.pages); setApiLoaded(true); })
-      .catch(() => { setApiPages(null); setApiLoaded(true); });
+      .then((data: { pages?: ApiPage[] }) => {
+        let pages = data?.pages;
+        if (!Array.isArray(pages)) pages = [];
+        setApiPages(pages);
+        setApiLoaded(true);
+      })
+      .catch(() => {
+        setApiPages([]);
+        setApiLoaded(true);
+      });
   }, []);
 
   const handleToggleAgent = (id: string, enabled: boolean) => {
