@@ -7,7 +7,7 @@
  */
 import express from "express";
 import cors from "cors";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -257,14 +257,44 @@ const PUBLIC_DIR = existsSync(join(ROOT, ".output", "public"))
 
 if (PUBLIC_DIR) {
   app.use(express.static(PUBLIC_DIR));
-  // Fallback para SPA en Express 5
+  
+  // Dynamic SPA index.html fallback
   app.use((req, res, next) => {
     if (req.path.startsWith("/api/")) return next();
-    const indexHtml = join(PUBLIC_DIR, "index.html");
-    if (existsSync(indexHtml)) {
-      return res.sendFile(indexHtml);
+    const staticIndex = join(PUBLIC_DIR, "index.html");
+    if (existsSync(staticIndex)) {
+      return res.sendFile(staticIndex);
     }
-    next();
+    
+    // Fallback HTML host for client bundle
+    const assetsDir = join(PUBLIC_DIR, "assets");
+    let scriptFile = "";
+    let styleFile = "";
+    if (existsSync(assetsDir)) {
+      const files = readdirSync(assetsDir);
+      scriptFile = files.find((f) => f.startsWith("index-") && f.endsWith(".js")) || "";
+      styleFile = files.find((f) => f.startsWith("styles-") && f.endsWith(".css")) || "";
+    }
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Allia2 — Conecta tu Página de Facebook</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  ${styleFile ? `<link rel="stylesheet" href="/assets/${styleFile}" />` : ""}
+</head>
+<body class="bg-background text-foreground">
+  <div id="root"></div>
+  ${scriptFile ? `<script type="module" src="/assets/${scriptFile}"></script>` : ""}
+</body>
+</html>`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
   });
   console.log(`[server] Serving static frontend from ${PUBLIC_DIR}`);
 }
