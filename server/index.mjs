@@ -29,9 +29,12 @@ function loadEnv() {
   return env;
 }
 
-const env = { ...process.env, ...loadEnv() };
+const env = { ...process.env, ...loadEnv() };  // .env wins over process.env
 const { FB_APP_ID, FB_APP_SECRET, FB_VERIFY_TOKEN } = env;
 const PORT = parseInt(env.SERVER_PORT ?? "8787", 10);
+
+console.log("[server] .env path:", join(ROOT, ".env"), "exists:", existsSync(join(ROOT, ".env")));
+console.log("[server] FB_VERIFY_TOKEN loaded:", FB_VERIFY_TOKEN ? "YES (length=" + FB_VERIFY_TOKEN.length + ")" : "NO — check .env");
 
 // ── Data helpers ──────────────────────────────────────────────────────────────
 const DATA_DIR = join(ROOT, "data");
@@ -232,9 +235,15 @@ app.post("/api/facebook/subscribe", async (_req, res) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`[server] http://localhost:${PORT}`);
+  console.log(`[server] Listening on http://localhost:${PORT}`);
+  console.log("[server] Routes registered:");
+  console.log("  GET  /api/facebook/pages");
+  console.log("  POST /api/facebook/exchange");
+  console.log("  GET  /api/facebook/webhook  ← Meta verify challenge");
+  console.log("  POST /api/facebook/webhook  ← incoming messages");
+  console.log("  POST /api/facebook/subscribe");
   if (!FB_APP_ID || !FB_APP_SECRET)
     console.warn("[server] WARNING: FB_APP_ID / FB_APP_SECRET missing in .env");
   if (!FB_VERIFY_TOKEN)
-    console.warn("[server] WARNING: FB_VERIFY_TOKEN missing in .env");
+    console.warn("[server] WARNING: FB_VERIFY_TOKEN missing in .env — GET /api/facebook/webhook will always 403");
 });
