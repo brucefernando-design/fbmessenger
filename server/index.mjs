@@ -32,7 +32,8 @@ function loadEnv() {
 
 const env = { ...process.env, ...loadEnv() };  // .env wins over process.env
 const { FB_APP_ID, FB_APP_SECRET, FB_VERIFY_TOKEN, GEMINI_API_KEY, GEMINI_MODEL, ADMIN_KEY } = env;
-const MODEL_NAME = GEMINI_MODEL || "gemini-2.5-flash-lite";
+const rawModel = GEMINI_MODEL || "gemini-3.5-flash-lite";
+const MODEL_NAME = rawModel.includes("2.5") ? "gemini-3.5-flash-lite" : rawModel;
 const EFFECTIVE_ADMIN_KEY = ADMIN_KEY || "allia2_admin_2026";
 const PORT = parseInt(env.SERVER_PORT ?? "8787", 10);
 
@@ -149,6 +150,48 @@ const writePrompts = (prompts) => {
   writeFileSync(PROMPTS_FILE, JSON.stringify(prompts, null, 2), "utf8");
   try { chmodSync(PROMPTS_FILE, 0o600); } catch {}
 };
+
+// ── Multi-Turn Conversation Memory (Per Page + User) ─────────────────────────
+const CONVERSATIONS_FILE = join(DATA_DIR, "conversations.json");
+
+function readConversations() {
+  if (!existsSync(CONVERSATIONS_FILE)) return {};
+  try { return JSON.parse(readFileSync(CONVERSATIONS_FILE, "utf8")); } catch { return {}; }
+}
+
+function writeConversations(convos) {
+  try {
+    mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(CONVERSATIONS_FILE, JSON.stringify(convos, null, 2), "utf8");
+    chmodSync(CONVERSATIONS_FILE, 0o600);
+  } catch (err) {
+    console.warn("[conversations] write error:", err.message);
+  }
+}
+
+const memoryConvos = readConversations();
+
+function getConversationHistory(pageId, senderId) {
+  const key = `${pageId}_${senderId}`;
+  if (!memoryConvos[key]) memoryConvos[key] = [];
+  const twoHoursAgo = Date.now() - 2 * 3600 * 1000;
+  memoryConvos[key] = memoryConvos[key].filter((m) => m.timestamp > twoHoursAgo);
+  return memoryConvos[key];
+}
+
+function recordConversationMessage(pageId, senderId, role, text) {
+  const key = `${pageId}_${senderId}`;
+  if (!memoryConvos[key]) memoryConvos[key] = [];
+  memoryConvos[key].push({
+    role,
+    text,
+    timestamp: Date.now(),
+  });
+  if (memoryConvos[key].length > 10) {
+    memoryConvos[key] = memoryConvos[key].slice(-10);
+  }
+  writeConversations(memoryConvos);
+}
 
 /** Returns the page access_token for a given page id, or null. */
 const getPageToken = (pageId) => {
@@ -815,22 +858,44 @@ app.post("/api/facebook/claim", async (req, res) => {
 const ALLIA2_SYSTEM_RULES = `Eres el asistente oficial de Facebook Messenger para este negocio.
 REGLAS OBLIGATORIAS (máxima prioridad sobre cualquier otra cosa):
 1. APEGO ESTRICTO AL TEXTO: BÁSATE ÚNICA Y EXCLUSIVAMENTE EN LA INFORMACIÓN PROPORCIONADA EN "TEXTO Y REGLAS DEL NEGOCIO".
-2. LO QUE NO ESTÁ EN EL TEXTO, NO EXISTE: Si se eliminó algún paquete, precio, promoción, plazo o condición (como financiamiento, compras a crédito, plazos de meses para pagar o pruebas gratuitas), o si simplemente NO aparece en el texto actual, TIENES ESTRICTAMENTE PROHIBIDO MENCIONARLO, OFRECERLO O SUPONERLO. Nunca inventes información que no esté escrita aquí.
-3. Si el cliente pregunta por un producto, plazo, paquete o precio que NO está explícitamente en el texto actual, responde amablemente que por el momento no está disponible o que un asesor humano le confirmará los detalles.
-4. Responde siempre en Español de México, en tono amable y profesional, y de forma breve (estilo Messenger: 1 a 3 párrafos cortos con viñetas cuando aplique).
-5. NUNCA pidas contraseñas de Facebook ni credenciales sensibles.
-6. NUNCA des diagnósticos médicos ni legales definitivos.
-7. Si piden hablar con un humano o presentan una queja, ofrece cordialmente que un asesor se comunicará con ellos.`;
+2. LO QUE NO ESTÁ EN EL TEXTO, NO EXISTE: Si se eliminó algún paquete, precio, promoción, plazo o condición, o si simplemente NO aparece en el texto actual, TIENES ESTRICTAMENTE PROHIBIDO MENCIONARLO, OFRECERLO O SUPONERLO. Nunca inventes información que no esté escrita aquí.
+3. MEMORIA Y CONTINUIDAD DE CONVERSACIÓN: Presta estricta atención al historial previo de la conversación.
+   - Si YA te presentaste en un mensaje anterior, NUNCA te vuelvas a presentar diciendo "Hola, soy Sofía...".
+   - Si el cliente ya te dijo qué busca, qué dispositivo tiene o su nombre, NUNCA vuelvas a preguntarle lo mismo. Avanza inmediatamente al siguiente paso (por ejemplo confirmar el modelo de su aparato, cotizar el precio exacto o mandar los datos de pago).
+   - Conversa de forma fluida, humana y continua sin reiniciar el saludo en cada respuesta.
+4. Si el cliente pregunta por un producto, plazo, paquete o precio que NO está explícitamente en el texto actual, responde amablemente que por el momento no está disponible o que un asesor humano le confirmará los detalles.
+5. Responde siempre en Español de México, en tono amable y profesional, y de forma breve (estilo Messenger: 1 a 3 párrafos cortos con viñetas cuando aplique).
+6. NUNCA pidas contraseñas de Facebook ni credenciales sensibles.
+7. NUNCA des diagnósticos médicos ni legales definitivos.
+8. Si piden hablar con un humano o presentan una queja, ofrece cordialmente que un asesor se comunicará con ellos.`;
 
-async function generateAIResponse(userText, pageInstructions) {
+async function generateAIResponse(userInputOrHistory, pageInstructions) {
   if (!GEMINI_API_KEY) {
     return null; // Fallback to echo if no key
   }
 
   const systemInstruction = `${ALLIA2_SYSTEM_RULES}\n\nTEXTO Y REGLAS DEL NEGOCIO:\n${pageInstructions || "No hay texto adicional configurado. Saluda amablemente y ofrece ayuda básica."}`;
 
-  // Models to attempt: primary configured, then fallbacks if model is retired/unavailable
-  const modelsToTry = [MODEL_NAME, "gemini-2.5-flash", "gemini-3.5-flash-lite"];
+  let contents = [];
+  if (Array.isArray(userInputOrHistory)) {
+    contents = userInputOrHistory.map((m) => ({
+      role: m.role,
+      parts: [{ text: m.text || m.parts?.[0]?.text || "" }],
+    }));
+  } else {
+    contents = [{ role: "user", parts: [{ text: String(userInputOrHistory) }] }];
+  }
+
+  // Ensure first message in contents is from "user" role (Gemini API requirement)
+  while (contents.length > 0 && contents[0].role !== "user") {
+    contents.shift();
+  }
+  if (contents.length === 0) {
+    contents = [{ role: "user", parts: [{ text: "Hola" }] }];
+  }
+
+  // Models to attempt: primary configured, then fallbacks
+  const modelsToTry = [MODEL_NAME, "gemini-3.5-flash-lite", "gemini-3.6-flash"];
   const uniqueModels = [...new Set(modelsToTry)];
 
   for (const model of uniqueModels) {
@@ -844,7 +909,7 @@ async function generateAIResponse(userText, pageInstructions) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents: [{ role: "user", parts: [{ text: userText }] }],
+          contents,
           generationConfig: { maxOutputTokens: 500, temperature: 0.2 },
         }),
         signal: controller.signal,
@@ -1008,6 +1073,10 @@ app.post("/api/facebook/webhook", async (req, res) => {
       await sendSenderAction(pageId, senderId, "typing_on", pageToken);
       const typingStartTime = Date.now();
 
+      // Registrar mensaje entrante en el historial de la conversación
+      recordConversationMessage(pageId, senderId, "user", text);
+      const history = getConversationHistory(pageId, senderId);
+
       // Resolve context for page
       const prompts = readPrompts();
       const pagePromptData = prompts[pageId] || {};
@@ -1028,9 +1097,12 @@ app.post("/api/facebook/webhook", async (req, res) => {
       } else if (!GEMINI_API_KEY) {
         replyText = "En un momento te confirma un asesor.";
       } else {
-        const aiReply = await generateAIResponse(text, contextText);
+        const aiReply = await generateAIResponse(history, contextText);
         replyText = aiReply || "En un momento te confirma un asesor.";
       }
+
+      // Registrar respuesta del bot en el historial de la conversación
+      recordConversationMessage(pageId, senderId, "model", replyText);
 
       // 2. Esperar para completar los 3 segundos de simulación de escritura humana
       const elapsedTypingMs = Date.now() - typingStartTime;
