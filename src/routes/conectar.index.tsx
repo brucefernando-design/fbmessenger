@@ -37,7 +37,31 @@ function ConectarPage() {
   const [loading, setLoading] = useState(true);
   const [client, setClient] = useState<InviteClient | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [blockedByTester, setBlockedByTester] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
+
+  function checkInvite(paramCode: string) {
+    setLoading(true);
+    fetch(`/api/invite/${paramCode}`)
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.valid) {
+          setErrorMsg(data.error || "Este enlace no es válido. Pide tu acceso a Allia2.");
+          setBlockedByTester(Boolean(data.blockedByTester));
+          setClient(data.client || null);
+        } else {
+          setErrorMsg(null);
+          setBlockedByTester(false);
+          setClient(data.client);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        setErrorMsg("No se pudo validar el enlace. Intenta de nuevo.");
+        setBlockedByTester(false);
+        setLoading(false);
+      });
+  }
 
   useEffect(() => {
     const search = new URLSearchParams(
@@ -52,21 +76,7 @@ function ConectarPage() {
       return;
     }
 
-    fetch(`/api/invite/${paramCode}`)
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.valid) {
-          setErrorMsg(data.error || "Este enlace no es válido. Pide tu acceso a Allia2.");
-          setClient(data.client || null);
-        } else {
-          setClient(data.client);
-        }
-        setLoading(false);
-      })
-      .catch(() => {
-        setErrorMsg("No se pudo validar el enlace. Intenta de nuevo.");
-        setLoading(false);
-      });
+    checkInvite(paramCode);
   }, []);
 
   function handleContinue() {
@@ -102,7 +112,50 @@ function ConectarPage() {
             </div>
           )}
 
-          {!loading && errorMsg && (
+          {!loading && blockedByTester && (
+            <div className="rounded-xl border border-border bg-card p-8 text-center shadow-sm">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <h1 className="mt-4 text-xl font-bold text-foreground">Acceso en preparación</h1>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                Bruce todavía te está dando de alta como tester en Facebook. En cuanto aceptes la invitación de Facebook en <span className="font-mono text-xs text-foreground">developers.facebook.com/requests</span> te habilitamos este enlace para conectar tu Página.
+              </p>
+
+              <div className="mt-6 flex flex-col gap-2.5">
+                <a
+                  href="https://developers.facebook.com/requests"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                  </svg>
+                  Abrir solicitudes en Facebook
+                </a>
+                {code && (
+                  <button
+                    type="button"
+                    onClick={() => checkInvite(code)}
+                    className="rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+                  >
+                    Ya la acepté, verificar de nuevo
+                  </button>
+                )}
+                <Link
+                  to="/"
+                  className="text-xs text-muted-foreground hover:text-foreground mt-2"
+                >
+                  ← Ir al inicio
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {!loading && !blockedByTester && errorMsg && (
             <div className="rounded-xl border border-border bg-card p-8 text-center shadow-sm">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 text-destructive">
                 <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

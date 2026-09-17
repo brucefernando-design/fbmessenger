@@ -242,24 +242,39 @@ app.get("/api/invite/:code", (req, res) => {
 
   const usedPages = pages.filter((p) => p.clientId === client.id).length;
   const isPaused = client.status === "paused";
-  const isFull = usedPages >= client.maxPages;
+  const isFull = usedPages >= (client.maxPages || 1);
+
+  // Check testerStatus requirement (default true)
+  const requireTester = client.requireTesterAccepted !== false;
+  const testerStatus = client.testerStatus || (usedPages > 0 ? "conecto_pagina" : (client.facebookUsername ? "listo_para_invitar" : "faltan_datos"));
+  const testerOk = !requireTester || testerStatus === "tester_aceptado" || testerStatus === "conecto_pagina";
 
   let message = "";
+  let blockedByTester = false;
+
   if (isPaused) {
     message = "Este acceso está pausado temporalmente. Contacta a Allia2.";
   } else if (isFull) {
-    message = `Ya se ha alcanzado el límite de Páginas para este acceso (${usedPages}/${client.maxPages}).`;
+    message = `Ya se ha alcanzado el límite de Páginas para este acceso (${usedPages}/${client.maxPages || 1}).`;
+  } else if (!testerOk) {
+    blockedByTester = true;
+    message = "Bruce todavía te está dando de alta como tester. En cuanto aceptes la invitación de Facebook te habilitamos el enlace.";
   }
 
   res.json({
-    valid: !isPaused && !isFull,
+    valid: !isPaused && !isFull && testerOk,
+    blockedByTester,
+    testerStatus,
+    testerOk,
     error: message || undefined,
     client: {
       id: client.id,
       name: client.name,
-      maxPages: client.maxPages,
+      maxPages: client.maxPages || 1,
       usedPages,
       status: client.status,
+      testerStatus,
+      requireTesterAccepted: requireTester,
       isPaused,
       isFull,
     },
@@ -270,7 +285,7 @@ app.get("/api/invite/:code", (req, res) => {
 app.post("/api/admin/login", (req, res) => {
   const { key } = req.body ?? {};
   if (!key || key !== EFFECTIVE_ADMIN_KEY) {
-    return res.status(401).json({ error: "Clave de administrador incorrecta" });
+    return res.status(401).json({ error: "Clave de Allia2 incorrecta" });
   }
   res.setHeader("Set-Cookie", `a2_admin_session=${EFFECTIVE_ADMIN_KEY}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
   res.json({ ok: true });
@@ -289,8 +304,17 @@ app.get("/api/admin/clients", requireAdmin, (_req, res) => {
   const { clients, pages } = readData();
   const clientsWithPages = clients.map((c) => {
     const assignedPages = pages.filter((p) => p.clientId === c.id).map(({ id, name }) => ({ id, name }));
+    const testerStatus = c.testerStatus || (assignedPages.length > 0 ? "conecto_pagina" : (c.facebookUsername ? "listo_para_invitar" : "faltan_datos"));
     return {
       ...c,
+      whatsapp: c.whatsapp || "",
+      facebookUsername: c.facebookUsername || "",
+      facebookName: c.facebookName || "",
+      testerStatus,
+      invitedAt: c.invitedAt || null,
+      acceptedAt: c.acceptedAt || null,
+      requireTesterAccepted: c.requireTesterAccepted !== false,
+      notes: c.notes || "",
       usedPages: assignedPages.length,
       pages: assignedPages,
     };
@@ -298,17 +322,57 @@ app.get("/api/admin/clients", requireAdmin, (_req, res) => {
   res.json({ ok: true, clients: clientsWithPages });
 });
 
+app.get("/api/admin/testers", requireAdmin, (_req, res) => {
+  const { clients, pages } = readData();
+  const testers = clients.map((c) => {
+    const assignedPages = pages.filter((p) => p.clientId === c.id).map(({ id, name }) => ({ id, name }));
+    const testerStatus = c.testerStatus || (assignedPages.length > 0 ? "conecto_pagina" : (c.facebookUsername ? "listo_para_invitar" : "faltan_datos"));
+    return {
+      clientId: c.id,
+      clientName: c.name,
+      whatsapp: c.whatsapp || "",
+      facebookUsername: c.facebookUsername || "",
+      facebookName: c.facebookName || "",
+      testerStatus,
+      invitedAt: c.invitedAt || null,
+      acceptedAt: c.acceptedAt || null,
+      requireTesterAccepted: c.requireTesterAccepted !== false,
+      code: c.code,
+      link: `https://fbm.allia2.com.mx/conectar?code=${c.code}`,
+      status: c.status || "active",
+      notes: c.notes || "",
+      usedPages: assignedPages.length,
+      maxPages: c.maxPages || 1,
+      pages: assignedPages,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+    };
+  });
+  res.json({ ok: true, testers });
+});
+
 app.post("/api/admin/clients", requireAdmin, (req, res) => {
-  const { name, maxPages } = req.body ?? {};
+  const { name, maxPages, whatsapp, facebookUsername, facebookName, notes, requireTesterAccepted } = req.body ?? {};
   if (!name || typeof name !== "string" || !name.trim()) {
     return res.status(400).json({ error: "El nombre del cliente es requerido" });
   }
+
+  const fbUser = (facebookUsername || "").trim();
+  const initialTesterStatus = fbUser ? "listo_para_invitar" : "faltan_datos";
 
   const limit = Math.max(1, parseInt(maxPages, 10) || 1);
   const data = readData();
   const newClient = {
     id: "client_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
     name: name.trim(),
+    whatsapp: (whatsapp || "").trim(),
+    facebookUsername: fbUser,
+    facebookName: (facebookName || "").trim(),
+    testerStatus: initialTesterStatus,
+    invitedAt: null,
+    acceptedAt: null,
+    requireTesterAccepted: requireTesterAccepted !== false,
+    notes: (notes || "").trim(),
     code: generateClientCode(),
     maxPages: limit,
     status: "active",
@@ -323,7 +387,19 @@ app.post("/api/admin/clients", requireAdmin, (req, res) => {
 
 app.patch("/api/admin/clients/:id", requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { name, maxPages, status } = req.body ?? {};
+  const {
+    name,
+    maxPages,
+    status,
+    whatsapp,
+    facebookUsername,
+    facebookName,
+    testerStatus,
+    requireTesterAccepted,
+    notes,
+    invitedAt,
+    acceptedAt,
+  } = req.body ?? {};
   const data = readData();
   const client = data.clients.find((c) => c.id === id);
   if (!client) return res.status(404).json({ error: "Cliente no encontrado" });
@@ -331,10 +407,102 @@ app.patch("/api/admin/clients/:id", requireAdmin, (req, res) => {
   if (name && typeof name === "string") client.name = name.trim();
   if (maxPages !== undefined) client.maxPages = Math.max(1, parseInt(maxPages, 10) || 1);
   if (status === "active" || status === "paused") client.status = status;
-  client.updatedAt = new Date().toISOString();
+  if (whatsapp !== undefined) client.whatsapp = String(whatsapp || "").trim();
+  if (facebookUsername !== undefined) client.facebookUsername = String(facebookUsername || "").trim();
+  if (facebookName !== undefined) client.facebookName = String(facebookName || "").trim();
+  if (testerStatus !== undefined) {
+    const validStatuses = ["faltan_datos", "listo_para_invitar", "invitacion_enviada", "tester_aceptado", "no_aparece", "conecto_pagina"];
+    if (validStatuses.includes(testerStatus)) {
+      client.testerStatus = testerStatus;
+      if (testerStatus === "invitacion_enviada" && !client.invitedAt) {
+        client.invitedAt = new Date().toISOString();
+      }
+      if (testerStatus === "tester_aceptado" && !client.acceptedAt) {
+        client.acceptedAt = new Date().toISOString();
+      }
+    }
+  }
+  if (requireTesterAccepted !== undefined) client.requireTesterAccepted = Boolean(requireTesterAccepted);
+  if (notes !== undefined) client.notes = String(notes || "").trim();
+  if (invitedAt !== undefined) client.invitedAt = invitedAt;
+  if (acceptedAt !== undefined) client.acceptedAt = acceptedAt;
 
+  client.updatedAt = new Date().toISOString();
   writeData(data);
   res.json({ ok: true, client });
+});
+
+app.post("/api/admin/clients/:id/validate-tester", requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const data = readData();
+  const client = data.clients.find((c) => c.id === id);
+  if (!client) return res.status(404).json({ error: "Cliente no encontrado" });
+
+  if (!FB_APP_ID || !FB_APP_SECRET) {
+    return res.json({
+      ok: true,
+      status: client.testerStatus || "faltan_datos",
+      source: "manual",
+      detail: "Meta no tiene configurado FB_APP_ID o FB_APP_SECRET. Márcalo manualmente cuando el cliente acepte.",
+    });
+  }
+
+  const token = `${FB_APP_ID}|${FB_APP_SECRET}`;
+  const url = `https://graph.facebook.com/v21.0/${FB_APP_ID}/roles?access_token=${encodeURIComponent(token)}`;
+
+  try {
+    const fbRes = await fetch(url);
+    const fbData = await fbRes.json().catch(() => ({}));
+
+    if (!fbRes.ok || !Array.isArray(fbData?.data)) {
+      return res.json({
+        ok: true,
+        status: client.testerStatus || "faltan_datos",
+        source: "manual",
+        detail: fbData?.error?.message || "Meta no permite listar los roles actualmente. Márcalo cuando el cliente acepte la invitación.",
+      });
+    }
+
+    const rolesList = fbData.data;
+    const targetUser = (client.facebookUsername || "").trim().toLowerCase();
+
+    // Check if target matches user field (id or username)
+    const matched = rolesList.find((r) => {
+      const u = String(r.user || "").toLowerCase();
+      return targetUser && (u === targetUser || (r.name && String(r.name).toLowerCase().includes(targetUser)));
+    });
+
+    if (matched) {
+      client.testerStatus = "tester_aceptado";
+      if (!client.acceptedAt) client.acceptedAt = new Date().toISOString();
+      client.updatedAt = new Date().toISOString();
+      writeData(data);
+      return res.json({
+        ok: true,
+        status: "tester_aceptado",
+        source: "graph",
+        detail: `Confirmado en Meta como ${matched.role || "tester"} (ID: ${matched.user}).`,
+      });
+    }
+
+    // If there are testers registered, but IDs are app-scoped or user pending
+    const testersCount = rolesList.filter((r) => r.role === "testers").length;
+    return res.json({
+      ok: true,
+      status: client.testerStatus || "listo_para_invitar",
+      source: "graph",
+      rolesFound: rolesList.length,
+      testersInApp: testersCount,
+      detail: `Meta reporta ${rolesList.length} rol(es) activos (${testersCount} testers). Si la invitación está pendiente en requests, Meta no la muestra hasta que el cliente pulse Aceptar. Márcalo cuando el cliente acepte.`,
+    });
+  } catch (err) {
+    return res.json({
+      ok: true,
+      status: client.testerStatus || "faltan_datos",
+      source: "manual",
+      detail: "No se pudo contactar con Meta Graph API. Márcalo manualmente cuando el cliente acepte.",
+    });
+  }
 });
 
 app.delete("/api/admin/clients/:id", requireAdmin, (req, res) => {
@@ -393,6 +561,8 @@ app.post("/api/admin/clients/:id/link-page", requireAdmin, (req, res) => {
   }
 
   page.clientId = client.id;
+  client.testerStatus = "conecto_pagina";
+  client.updatedAt = new Date().toISOString();
   writeData(data);
   res.json({ ok: true });
 });
@@ -609,6 +779,8 @@ app.post("/api/facebook/claim", async (req, res) => {
   } else {
     data.pages.push(pageRecord);
   }
+  client.testerStatus = "conecto_pagina";
+  client.updatedAt = new Date().toISOString();
   writeData(data);
 
   // Auto-subscribe page to webhook in Meta
