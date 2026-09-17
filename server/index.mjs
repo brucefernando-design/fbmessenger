@@ -812,13 +812,15 @@ app.post("/api/facebook/claim", async (req, res) => {
 
 // ── GET /api/facebook/webhook — Meta verification challenge ───────────────────
 // ── Gemini AI Assistant ───────────────────────────────────────────────────────
-const ALLIA2_SYSTEM_RULES = `Eres el asistente oficial de Allia2 para Facebook Messenger de este negocio.
-REGLAS OBLIGATORIAS (siempre aplican, máxima prioridad):
-1. Responde siempre en Español de México, en tono amable y profesional, y de forma breve (estilo WhatsApp/Messenger: 1 a 3 párrafos cortos).
-2. NUNCA inventes precios, horarios ni disponibilidad. Si la información no está explícitamente en el texto del negocio, di cordialmente que un humano lo confirmará.
-3. NUNCA pidas contraseñas de Facebook ni credenciales sensibles.
-4. NUNCA des diagnósticos médicos ni legales definitivos.
-5. Si piden hablar con un humano o presentan una queja, ofrece cordialmente que un asesor se comunicará con ellos.`;
+const ALLIA2_SYSTEM_RULES = `Eres el asistente oficial de Facebook Messenger para este negocio.
+REGLAS OBLIGATORIAS (máxima prioridad sobre cualquier otra cosa):
+1. APEGO ESTRICTO AL TEXTO: BÁSATE ÚNICA Y EXCLUSIVAMENTE EN LA INFORMACIÓN PROPORCIONADA EN "TEXTO Y REGLAS DEL NEGOCIO".
+2. LO QUE NO ESTÁ EN EL TEXTO, NO EXISTE: Si se eliminó algún paquete, precio, promoción, plazo o condición (como financiamiento, compras a crédito, plazos de meses para pagar o pruebas gratuitas), o si simplemente NO aparece en el texto actual, TIENES ESTRICTAMENTE PROHIBIDO MENCIONARLO, OFRECERLO O SUPONERLO. Nunca inventes información que no esté escrita aquí.
+3. Si el cliente pregunta por un producto, plazo, paquete o precio que NO está explícitamente en el texto actual, responde amablemente que por el momento no está disponible o que un asesor humano le confirmará los detalles.
+4. Responde siempre en Español de México, en tono amable y profesional, y de forma breve (estilo Messenger: 1 a 3 párrafos cortos con viñetas cuando aplique).
+5. NUNCA pidas contraseñas de Facebook ni credenciales sensibles.
+6. NUNCA des diagnósticos médicos ni legales definitivos.
+7. Si piden hablar con un humano o presentan una queja, ofrece cordialmente que un asesor se comunicará con ellos.`;
 
 async function generateAIResponse(userText, pageInstructions) {
   if (!GEMINI_API_KEY) {
@@ -843,7 +845,7 @@ async function generateAIResponse(userText, pageInstructions) {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemInstruction }] },
           contents: [{ role: "user", parts: [{ text: userText }] }],
-          generationConfig: { maxOutputTokens: 500, temperature: 0.7 },
+          generationConfig: { maxOutputTokens: 500, temperature: 0.2 },
         }),
         signal: controller.signal,
       });

@@ -366,11 +366,11 @@ function PromptEditor({ pageId }: { pageId: string }) {
       const res = await fetch(`/api/pages/${pageId}/prompt`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ raw, generated, useCustom }),
+        body: JSON.stringify({ raw: raw || generated, generated, useCustom }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
-        setPromptMsg({ type: "success", text: "Prompt guardado correctamente." });
+        setPromptMsg({ type: "success", text: "Prompt activo guardado. El agente ahora responde estrictamente con este texto." });
       } else {
         setPromptMsg({ type: "error", text: data.error || "Error al guardar el prompt." });
       }
@@ -400,9 +400,16 @@ function PromptEditor({ pageId }: { pageId: string }) {
           {/* Section 1: Información de tu negocio */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-foreground">
-                Información de tu negocio
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-foreground">
+                  Información base del negocio
+                </label>
+                {!useCustom && (
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                    ● ACTIVO EN VIVO
+                  </span>
+                )}
+              </div>
               <span className="font-mono text-xs text-muted-foreground">
                 {raw.length} / 20000
               </span>
@@ -462,9 +469,16 @@ function PromptEditor({ pageId }: { pageId: string }) {
           {/* Section 2: Prompt generado */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-foreground">
-                Prompt generado — puedes editarlo
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-foreground">
+                  Prompt activo del agente — puedes editarlo o borrar lo que no quieras
+                </label>
+                {useCustom && (
+                  <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                    ● ACTIVO EN VIVO EN MESSENGER
+                  </span>
+                )}
+              </div>
               <span className="font-mono text-xs text-muted-foreground">
                 {generated.length} / 20000
               </span>
@@ -472,8 +486,8 @@ function PromptEditor({ pageId }: { pageId: string }) {
             <textarea
               value={generated}
               onChange={(e) => setGenerated(e.target.value.slice(0, 20000))}
-              rows={7}
-              placeholder="El prompt estructurado por la IA aparecerá aquí tras pulsar 'Generar prompt con IA'. También puedes redactarlo o ajustarlo libremente..."
+              rows={9}
+              placeholder="El prompt estructurado por la IA aparecerá aquí tras pulsar 'Generar prompt con IA'. También puedes redactarlo, borrar o ajustar libremente..."
               className="w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary font-mono text-xs leading-relaxed"
             />
 
