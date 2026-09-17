@@ -121,7 +121,7 @@ function ConectarPage() {
               </div>
               <h1 className="mt-4 text-xl font-bold text-foreground">Acceso en preparación</h1>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Bruce todavía te está dando de alta como tester en Facebook. En cuanto aceptes la invitación de Facebook en <span className="font-mono text-xs text-foreground">developers.facebook.com/requests</span> te habilitamos este enlace para conectar tu Página.
+                Allia2 todavía está activando tu acceso como tester en Facebook. En cuanto aceptes la invitación de Facebook en <span className="font-mono text-xs text-foreground">developers.facebook.com/requests</span> te habilitamos este enlace para conectar tu Página.
               </p>
 
               <div className="mt-6 flex flex-col gap-2.5">

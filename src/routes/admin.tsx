@@ -554,7 +554,7 @@ function AdminPage() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[#0866FF] text-white font-bold text-xl shadow-md">
               A2
             </div>
-            <h1 className="mt-4 text-xl font-bold text-foreground">Panel de Control Bruce</h1>
+            <h1 className="mt-4 text-xl font-bold text-foreground">Panel de Administración</h1>
             <p className="mt-1.5 text-xs text-muted-foreground">
               Ingresa la Clave de Allia2 para gestionar clientes, testers y enlaces.
             </p>
@@ -631,7 +631,7 @@ function AdminPage() {
             </div>
             <div>
               <h1 className="text-sm font-bold text-foreground leading-none">Allia2 Messenger</h1>
-              <span className="text-[11px] text-muted-foreground">Panel Bruce • Modo Desarrollo</span>
+              <span className="text-[11px] text-muted-foreground">Administración • Modo Desarrollo</span>
             </div>
           </div>
 

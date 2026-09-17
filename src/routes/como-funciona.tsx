@@ -78,7 +78,7 @@ function ComoFunciona() {
 
       <div className="mt-8 text-center space-y-2">
         <a
-          href="https://wa.me/?text=Hola%2C%20quiero%20conectar%20mi%20P%C3%A1gina%20de%20Facebook%20con%20Allia2"
+          href="https://wa.me/525644117635?text=Hola%2C%20quiero%20conectar%20mi%20P%C3%A1gina%20de%20Facebook%20con%20Allia2"
           target="_blank"
           rel="noreferrer"
           className="inline-block rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"

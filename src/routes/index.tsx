@@ -72,7 +72,7 @@ function Landing() {
               Cómo funciona
             </Link>
             <a
-              href="https://wa.me/?text=Hola%2C%20quiero%20conectar%20mi%20P%C3%A1gina%20de%20Facebook%20con%20Allia2"
+              href="https://wa.me/525644117635?text=Hola%2C%20quiero%20conectar%20mi%20P%C3%A1gina%20de%20Facebook%20con%20Allia2"
               target="_blank"
               rel="noreferrer"
               className="rounded-lg border border-border bg-card px-6 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
@@ -81,7 +81,7 @@ function Landing() {
             </a>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            ¿Ya eres cliente? Usa el enlace directo que te envió Bruce para autorizar tu Página.
+            ¿Ya eres cliente? Usa el enlace directo que te envió Allia2 para autorizar tu Página.
           </p>
 
           {/* Trust badges */}

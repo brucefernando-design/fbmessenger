@@ -258,7 +258,7 @@ app.get("/api/invite/:code", (req, res) => {
     message = `Ya se ha alcanzado el límite de Páginas para este acceso (${usedPages}/${client.maxPages || 1}).`;
   } else if (!testerOk) {
     blockedByTester = true;
-    message = "Bruce todavía te está dando de alta como tester. En cuanto aceptes la invitación de Facebook te habilitamos el enlace.";
+    message = "Allia2 todavía está activando tu acceso como tester. En cuanto aceptes la invitación de Facebook te habilitamos el enlace.";
   }
 
   res.json({
