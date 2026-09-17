@@ -66,19 +66,23 @@ function Landing() {
 
           <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Link
-              to="/conectar"
-              className="flex items-center justify-center gap-2.5 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <FacebookLogo className="h-5 w-5" />
-              Conectar Página
-            </Link>
-            <Link
               to="/como-funciona"
+              className="flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Cómo funciona
+            </Link>
+            <a
+              href="https://wa.me/?text=Hola%2C%20quiero%20conectar%20mi%20P%C3%A1gina%20de%20Facebook%20con%20Allia2"
+              target="_blank"
+              rel="noreferrer"
               className="rounded-lg border border-border bg-card px-6 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
             >
-              Ver cómo funciona
-            </Link>
+              Pide tu acceso
+            </a>
           </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            ¿Ya eres cliente? Usa el enlace directo que te envió Bruce para autorizar tu Página.
+          </p>
 
           {/* Trust badges */}
           <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-3">

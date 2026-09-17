@@ -191,7 +191,44 @@ app.use(express.json());
 
 // ── GET /api/health ───────────────────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: "ok", gemini: Boolean(GEMINI_API_KEY) });
+});
+
+// ── POST /api/agent/preview — test AI response without Facebook ───────────────
+app.post("/api/agent/preview", async (req, res) => {
+  const { pageId, text } = req.body ?? {};
+  if (!pageId || !text) {
+    return res.status(400).json({ error: "pageId and text are required" });
+  }
+
+  const prompts = readPrompts();
+  const pagePromptData = prompts[pageId] || {};
+  const useCustom = pagePromptData.useCustom ?? true;
+  const raw = pagePromptData.raw?.trim() || "";
+  const generated = pagePromptData.generated?.trim() || "";
+
+  let contextText = "";
+  if (useCustom && generated) {
+    contextText = generated;
+  } else if (raw) {
+    contextText = raw;
+  }
+
+  if (!contextText) {
+    return res.json({ reply: "En un momento te atiende un asesor." });
+  }
+
+  if (!GEMINI_API_KEY) {
+    return res.json({ reply: "En un momento te confirma un asesor." });
+  }
+
+  try {
+    const aiReply = await generateAIResponse(text, contextText);
+    res.json({ reply: aiReply || "En un momento te confirma un asesor." });
+  } catch (err) {
+    console.error("[preview] Error:", err.message);
+    res.json({ reply: "En un momento te confirma un asesor." });
+  }
 });
 
 // ── GET /api/invite/:code ─────────────────────────────────────────────────────

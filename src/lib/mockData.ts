@@ -27,55 +27,28 @@ export interface MockAppointment {
 
 // Pages shown in the connect flow (Step 2 — choose page)
 export const connectablePages = [
-  { id: "page_001", name: "Clínica Norte", initials: "CN", category: "Salud y medicina" },
-  { id: "page_002", name: "Barbería Centro", initials: "BC", category: "Servicios de belleza" },
-  { id: "page_003", name: "Taller López", initials: "TL", category: "Servicios automotrices" },
+  { id: "page_001", name: "Mi Negocio", initials: "MN", category: "Servicios locales" },
 ];
 
 // Pages already connected (shown in /pages list)
 export const connectedPages: MockPage[] = [
   {
     id: "page_001",
-    name: "Clínica Norte",
-    initials: "CN",
-    category: "Salud y medicina",
-    status: "agente_activo",
-    lastMessage: "hace 5 min",
-    agentEnabled: true,
-    connectedAt: "2026-09-13",
-    authorizedAgo: "hace 2 días",
-    businessInfo: {
-      name: "Clínica Norte",
-      hours: "Lun–Vie 9:00–18:00, Sáb 9:00–13:00",
-      services: "Limpieza dental, Ortodoncia, Endodoncia, Consulta general",
-      greeting: "¡Hola! Bienvenido a Clínica Norte. ¿Cómo puedo ayudarte hoy?",
-    },
-    appointments: [
-      { id: "apt_1", client: "María González", service: "Limpieza dental", datetime: "Hoy 15:00", status: "confirmada" },
-      { id: "apt_2", client: "Carlos Ruiz", service: "Consulta general", datetime: "Mañana 10:30", status: "pendiente" },
-      { id: "apt_3", client: "Ana Torres", service: "Ortodoncia", datetime: "Jue 17:00", status: "confirmada" },
-    ],
-  },
-  {
-    id: "page_002",
-    name: "Barbería Centro",
-    initials: "BC",
-    category: "Servicios de belleza",
+    name: "Mi Negocio",
+    initials: "MN",
+    category: "Servicios locales",
     status: "conectada",
-    lastMessage: "hace 1 h",
+    lastMessage: "Activo",
     agentEnabled: false,
-    connectedAt: "2026-09-12",
-    authorizedAgo: "hace 3 días",
+    connectedAt: "2026-09-15",
+    authorizedAgo: "reciente",
     businessInfo: {
-      name: "Barbería Centro",
-      hours: "Lun–Sáb 10:00–20:00",
-      services: "Corte clásico, Afeitado, Corte + barba, Diseño de cejas",
-      greeting: "¡Qué tal! Barbería Centro. ¿Agendamos tu corte?",
+      name: "Mi Negocio",
+      hours: "",
+      services: "",
+      greeting: "",
     },
-    appointments: [
-      { id: "apt_1", client: "Jorge Méndez", service: "Corte + barba", datetime: "Hoy 14:00", status: "confirmada" },
-      { id: "apt_2", client: "Pedro Lara", service: "Corte clásico", datetime: "Hoy 16:00", status: "pendiente" },
-    ],
+    appointments: [],
   },
 ];
 

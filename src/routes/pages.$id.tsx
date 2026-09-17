@@ -174,15 +174,15 @@ function ResumenTab({
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
         setWebhookState("ok");
-        setWebhookMsg("Webhook activado. Messenger enviará eventos a tu servidor.");
+        setWebhookMsg("Página suscrita con éxito a Messenger.");
       } else {
         setWebhookState("error");
         const pageResult = data.pages?.find((p: { id: string }) => p.id === page.id);
-        setWebhookMsg(pageResult?.error ?? data.error ?? "Error al suscribir el webhook.");
+        setWebhookMsg(pageResult?.error ?? data.error ?? "Error al suscribir la página.");
       }
     } catch {
       setWebhookState("error");
-      setWebhookMsg("No se pudo contactar con el servidor. ¿Está corriendo `npm run server`?");
+      setWebhookMsg("No se pudo contactar con el servidor de Allia2.");
     }
   }
 
@@ -215,11 +215,14 @@ function ResumenTab({
       {/* Prompt Editor */}
       <PromptEditor pageId={page.id} />
 
+      {/* Live Agent Simulator */}
+      <AgentSimulator pageId={page.id} />
+
       {/* Webhook */}
       <div className="rounded-xl border border-border bg-card p-5">
-        <h2 className="text-sm font-semibold text-foreground">Webhook de Messenger</h2>
+        <h2 className="text-sm font-semibold text-foreground">Suscripción de Messenger</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Suscribe esta Página para recibir mensajes en tu servidor local (ngrok requerido en producción).
+          Conecta los eventos en vivo de Messenger al webhook de Allia2 (<span className="font-mono text-foreground">https://fbm.allia2.com.mx/api/facebook/webhook</span>).
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
           <button
@@ -230,10 +233,10 @@ function ResumenTab({
             {webhookState === "loading" ? (
               <>
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                Activando…
+                Suscribiendo…
               </>
             ) : (
-              "Activar webhook (prueba)"
+              "Suscribir esta Página"
             )}
           </button>
           {webhookState === "ok" && (
@@ -522,8 +525,167 @@ function PromptEditor({ pageId }: { pageId: string }) {
   );
 }
 
+function AgentSimulator({ pageId }: { pageId: string }) {
+  const [messages, setMessages] = useState<
+    Array<{ role: "user" | "agent"; text: string; time: string; model?: string }>
+  >([
+    {
+      role: "agent",
+      text: "¡Hola! Soy el agente IA de esta Página. Hazme una pregunta como si fueras un cliente para comprobar cómo responderé en Messenger.",
+      time: "Ahora",
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const suggestions = [
+    "Hola, ¿cuál es su horario de atención?",
+    "¿Qué servicios o productos ofrecen y qué precios tienen?",
+    "¿Dónde están ubicados?",
+  ];
+
+  async function handleSend(textToSend?: string) {
+    const text = (textToSend ?? input).trim();
+    if (!text || loading) return;
+
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    setMessages((prev) => [...prev, { role: "user", text, time }]);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/agent/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageId, text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const replyTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      if (res.ok && data.reply) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "agent", text: data.reply, time: replyTime, model: data.model },
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "agent",
+            text: data.error || "No se pudo obtener respuesta del agente. Verifica la configuración.",
+            time: replyTime,
+          },
+        ]);
+      }
+    } catch {
+      const replyTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          text: "Error de conexión al simular la respuesta.",
+          time: replyTime,
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center justify-between pb-3 border-b border-border">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <span>Probar agente IA (simulador en vivo)</span>
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+              Gemini 2.5
+            </span>
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Prueba cómo responderá el agente a tus clientes según el prompt configurado, sin necesidad de abrir Facebook.
+          </p>
+        </div>
+      </div>
+
+      {/* Chat Messages */}
+      <div className="mt-4 space-y-3 max-h-[320px] overflow-y-auto rounded-lg bg-[#F0F2F5] p-3">
+        {messages.map((m, idx) => (
+          <div
+            key={idx}
+            className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}
+          >
+            <div
+              className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-sm ${
+                m.role === "user"
+                  ? "bg-[#0866FF] text-white rounded-br-none"
+                  : "bg-white text-[#050505] rounded-bl-none border border-black/5"
+              }`}
+            >
+              {m.text}
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 px-1 text-[10px] text-muted-foreground">
+              <span>{m.time}</span>
+              {m.model && (
+                <span className="font-mono text-[9px] text-primary/80">({m.model})</span>
+              )}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="flex items-center gap-1.5 rounded-2xl bg-white border border-black/5 px-3.5 py-2 w-fit">
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0.2s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0.4s]" />
+          </div>
+        )}
+      </div>
+
+      {/* Suggested chips */}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {suggestions.map((s, i) => (
+          <button
+            key={i}
+            type="button"
+            disabled={loading}
+            onClick={() => handleSend(s)}
+            className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {/* Input */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSend();
+        }}
+        className="mt-3 flex gap-2"
+      >
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Escribe una pregunta de prueba..."
+          disabled={loading}
+          className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+        />
+        <button
+          type="submit"
+          disabled={loading || !input.trim()}
+          className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {loading ? "Enviando…" : "Enviar"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function FichaTab({ page }: { page: MockPage }) {
   const [info, setInfo] = useState(page.businessInfo);
+  const [saved, setSaved] = useState(false);
 
   return (
     <div className="rounded-xl border border-border bg-card p-5">
@@ -532,76 +694,69 @@ function FichaTab({ page }: { page: MockPage }) {
         <Field label="Nombre del negocio">
           <input
             value={info.name}
-            onChange={(e) => setInfo({ ...info, name: e.target.value })}
+            onChange={(e) => { setInfo({ ...info, name: e.target.value }); setSaved(false); }}
+            placeholder="Ej: Fta Laredo"
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
           />
         </Field>
-        <Field label="Horarios">
+        <Field label="Horarios de atención">
           <input
             value={info.hours}
-            onChange={(e) => setInfo({ ...info, hours: e.target.value })}
+            onChange={(e) => { setInfo({ ...info, hours: e.target.value }); setSaved(false); }}
+            placeholder="Ej: Lunes a Viernes 9:00 a 18:00, Sábados 9:00 a 14:00"
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
           />
         </Field>
-        <Field label="Servicios">
+        <Field label="Servicios principales y precios">
           <textarea
             value={info.services}
-            onChange={(e) => setInfo({ ...info, services: e.target.value })}
-            rows={2}
+            onChange={(e) => { setInfo({ ...info, services: e.target.value }); setSaved(false); }}
+            placeholder="Detalla tus servicios, productos y precios o promociones..."
+            rows={3}
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
           />
         </Field>
-        <Field label="Saludo de bienvenida">
+        <Field label="Saludo cordial de bienvenida">
           <textarea
             value={info.greeting}
-            onChange={(e) => setInfo({ ...info, greeting: e.target.value })}
+            onChange={(e) => { setInfo({ ...info, greeting: e.target.value }); setSaved(false); }}
+            placeholder="Mensaje de bienvenida para los clientes que escriban por primera vez..."
             rows={2}
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
           />
         </Field>
       </div>
-      <button className="mt-5 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
-        Guardar cambios
-      </button>
+      <div className="mt-5 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setSaved(true)}
+          className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          Guardar cambios
+        </button>
+        {saved && (
+          <span className="text-xs text-success font-medium">✓ Cambios guardados en la ficha</span>
+        )}
+      </div>
     </div>
   );
 }
 
 function CitasTab({ page }: { page: MockPage }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <h2 className="mb-4 text-sm font-semibold text-foreground">Citas</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-xs text-muted-foreground">
-              <th className="pb-2 pr-4 font-medium">Cliente</th>
-              <th className="pb-2 pr-4 font-medium">Servicio</th>
-              <th className="pb-2 pr-4 font-medium">Fecha</th>
-              <th className="pb-2 font-medium">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {page.appointments.map((apt) => (
-              <tr key={apt.id} className="border-b border-border/50">
-                <td className="py-3 pr-4 text-foreground">{apt.client}</td>
-                <td className="py-3 pr-4 text-muted-foreground">{apt.service}</td>
-                <td className="py-3 pr-4 text-muted-foreground">{apt.datetime}</td>
-                <td className="py-3">
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      apt.status === "confirmada"
-                        ? "bg-success/10 text-success"
-                        : "bg-secondary text-muted-foreground"
-                    }`}
-                  >
-                    {apt.status === "confirmada" ? "Confirmada" : "Pendiente"}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="rounded-xl border border-border bg-card p-10 text-center">
+      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+      </div>
+      <h3 className="text-base font-semibold text-foreground">Agenda de Citas</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+        Las citas las anota el agente y las ves aquí cuando haya. Hoy aún no hay.
+      </p>
+      <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-border bg-secondary/50 px-3 py-1 text-xs text-muted-foreground">
+        <span className="h-2 w-2 rounded-full bg-success" />
+        Agente configurado para captar y registrar citas
       </div>
     </div>
   );
@@ -609,16 +764,19 @@ function CitasTab({ page }: { page: MockPage }) {
 
 function MensajesTab() {
   return (
-    <div className="rounded-xl border border-border bg-card p-12 text-center">
-      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
-        <svg className="h-6 w-6 text-muted-foreground" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M8 12h8M8 8h8m-8 8h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          <rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
+    <div className="rounded-xl border border-border bg-card p-10 text-center">
+      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h8M8 8h8m-8 8h5" />
+          <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth="1.5" />
         </svg>
       </div>
-      <p className="text-sm font-medium text-foreground">Próximamente: inbox de Messenger</p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Aquí verás y responderás los mensajes de tus clientes.
+      <h3 className="text-base font-semibold text-foreground">Atención 24/7 en Messenger</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+        Tu agente IA responde de manera autónoma e inmediata a las conversaciones entrantes en Messenger.
+      </p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        También puedes consultar el historial y responder directamente en cualquier momento desde Meta Business Suite.
       </p>
     </div>
   );
