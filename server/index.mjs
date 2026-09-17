@@ -945,6 +945,23 @@ app.get("/api/facebook/webhook", (req, res) => {
   res.sendStatus(403);
 });
 
+// Helper to send Facebook Messenger sender actions (mark_seen, typing_on, typing_off)
+async function sendSenderAction(pageId, senderId, action, pageToken) {
+  try {
+    await fetch(`https://graph.facebook.com/v21.0/${pageId}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recipient: { id: senderId },
+        sender_action: action,
+        access_token: pageToken,
+      }),
+    });
+  } catch (err) {
+    console.warn(`[webhook] Failed to send sender_action "${action}":`, err.message);
+  }
+}
+
 // ── POST /api/facebook/webhook — incoming Messenger events ────────────────────
 app.post("/api/facebook/webhook", async (req, res) => {
   // Respond 200 immediately so Meta doesn't retry
@@ -986,6 +1003,11 @@ app.post("/api/facebook/webhook", async (req, res) => {
         }
       }
 
+      // 1. Simulación humana: marcar como visto y activar animación "Escribiendo..."
+      await sendSenderAction(pageId, senderId, "mark_seen", pageToken);
+      await sendSenderAction(pageId, senderId, "typing_on", pageToken);
+      const typingStartTime = Date.now();
+
       // Resolve context for page
       const prompts = readPrompts();
       const pagePromptData = prompts[pageId] || {};
@@ -1008,6 +1030,13 @@ app.post("/api/facebook/webhook", async (req, res) => {
       } else {
         const aiReply = await generateAIResponse(text, contextText);
         replyText = aiReply || "En un momento te confirma un asesor.";
+      }
+
+      // 2. Esperar para completar los 3 segundos de simulación de escritura humana
+      const elapsedTypingMs = Date.now() - typingStartTime;
+      const TARGET_TYPING_MS = 3000;
+      if (elapsedTypingMs < TARGET_TYPING_MS) {
+        await new Promise((resolve) => setTimeout(resolve, TARGET_TYPING_MS - elapsedTypingMs));
       }
 
       try {
